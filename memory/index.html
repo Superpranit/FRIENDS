@@ -1,0 +1,686 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d10">
+<title>Memory Box</title>
+<script>
+/* Phones and tablets go straight to the camera (https only). ?preview plays it in 3D without a camera. */
+try {
+  var secure = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  var q = new URLSearchParams(location.search);
+  if (q.has('preview')) document.documentElement.classList.add('preview');
+  else if (secure && (matchMedia('(pointer: coarse)').matches || location.hash === '#ar')) document.documentElement.classList.add('auto');
+} catch (e) {}
+</script>
+<style>html.auto #intro, html.preview #intro{visibility:hidden}</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;1,500&family=Manrope:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout: full-screen stage. Laptop intro = the print + QR; phone = camera straight away; inside = full-bleed film. */
+:root{
+  --ink:#0b0d10;        /* night before the memory */
+  --mist:#dfe4ea;       /* the fog on the hill */
+  --warm:#ffcf8a;       /* remembered light */
+  --muted:rgba(223,228,234,.66);
+  --line:rgba(223,228,234,.28);
+  --display:'Cormorant Garamond',Georgia,serif;
+  --body:'Manrope',system-ui,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--ink);color:var(--mist);font-family:var(--body);-webkit-font-smoothing:antialiased;overscroll-behavior:none}
+button{font:inherit;color:inherit}
+a{color:var(--warm)}
+.hidden{display:none !important}
+
+/* ---------- INTRO (laptops) ---------- */
+.intro{min-height:100%;display:flex;align-items:center;justify-content:center;padding:calc(32px + env(safe-area-inset-top,0px)) 16px calc(32px + env(safe-area-inset-bottom,0px));
+  background:radial-gradient(90% 70% at 50% 30%, #1d232b 0%, var(--ink) 70%)}
+.intro-grid{display:flex;flex-wrap:wrap;gap:36px;align-items:center;justify-content:center;max-width:960px;width:100%}
+.print{flex:0 1 340px;min-width:0}
+.print img{display:block;width:100%;height:auto;border-radius:3px;box-shadow:0 0 0 1px var(--line), 0 30px 70px -20px rgba(0,0,0,.9)}
+.side{flex:1 1 300px;max-width:400px;min-width:0;display:flex;flex-direction:column;gap:18px}
+.side h1{margin:0;font:italic 500 clamp(36px,6vw,52px)/1 var(--display);letter-spacing:.01em}
+.side p{margin:0;color:var(--muted);line-height:1.6;font-size:15px}
+.row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.btn{display:inline-flex;align-items:center;gap:10px;height:48px;padding:0 20px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.06);cursor:pointer;font:600 13px/1 var(--body);letter-spacing:.14em;text-transform:uppercase;text-decoration:none;color:var(--mist)}
+.btn.primary{background:var(--mist);color:var(--ink);border-color:var(--mist)}
+.btn:focus-visible{outline:3px solid var(--warm);outline-offset:3px}
+.btn svg{width:18px;height:18px}
+.warn{padding:10px 12px;border-radius:10px;border:1px solid rgba(255,207,138,.5);background:rgba(255,207,138,.1);font-size:13px;line-height:1.5}
+@media (pointer: coarse) and (max-width: 820px){.print{display:none}}
+
+/* ---------- AR + FILM ---------- */
+.ar{position:fixed;inset:0;background:#000;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none}
+.ar-stage{position:absolute;inset:0;transition:opacity .9s ease}
+.ar-stage video{object-fit:cover}
+.cinema{position:absolute;inset:0;z-index:2}
+.cinema canvas{display:block;width:100% !important;height:100% !important}
+.flash{position:absolute;inset:0;z-index:3;pointer-events:none;opacity:0;background:radial-gradient(circle at 50% 50%, rgba(255,250,240,.95), rgba(230,236,244,.5) 45%, rgba(0,0,0,0) 80%)}
+.flash.go{animation:flash 1.5s ease-out}
+@keyframes flash{0%{opacity:0}25%{opacity:1}100%{opacity:0}}
+.bars::before,.bars::after{content:"";position:absolute;left:0;right:0;z-index:4;height:0;background:#000;transition:height 1.8s cubic-bezier(.2,.8,.2,1);pointer-events:none}
+.bars::before{top:0}.bars::after{bottom:0}
+.bars.on::before,.bars.on::after{height:6.5vh}
+.top{position:absolute;right:0;top:0;z-index:6;padding:calc(12px + env(safe-area-inset-top,0px)) 14px 0;pointer-events:none}
+.icon-btn{pointer-events:auto;display:grid;place-items:center;width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:rgba(11,13,16,.45);cursor:pointer;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.icon-btn svg{width:18px;height:18px}
+.icon-btn:focus-visible{outline:3px solid var(--warm);outline-offset:3px}
+.dock{position:absolute;left:0;right:0;bottom:0;z-index:6;display:flex;justify-content:center;padding:0 16px calc(28px + env(safe-area-inset-bottom,0px));pointer-events:none}
+.enter{pointer-events:auto;position:relative;display:grid;place-items:center;width:72px;height:72px;border-radius:50%;cursor:pointer;border:0;background:rgba(11,13,16,.4);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);box-shadow:0 0 40px -6px rgba(255,220,170,.8)}
+.enter svg.ring{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg)}
+.enter .track{stroke:rgba(255,240,220,.25)}
+.enter .prog{stroke:#fff3df;stroke-dasharray:100;stroke-dashoffset:100}
+.enter svg.glyph{width:26px;height:26px}
+.enter:focus-visible{outline:3px solid var(--warm);outline-offset:4px}
+.gestures{display:flex;gap:26px;opacity:0;transition:opacity 1.2s;pointer-events:none}
+.gestures.on{opacity:.85}
+.gestures svg{width:34px;height:34px;filter:drop-shadow(0 1px 6px rgba(0,0,0,.7))}
+.g-drag{animation:drag 2.4s ease-in-out infinite}
+.g-pinch{animation:pinch 2.4s ease-in-out infinite}
+.g-tap{animation:tap 2.4s ease-in-out infinite}
+@keyframes drag{0%,100%{transform:translateX(-6px)}50%{transform:translateX(6px)}}
+@keyframes pinch{0%,100%{transform:scale(.9)}50%{transform:scale(1.1)}}
+@keyframes tap{0%,60%,100%{transform:scale(1)}70%{transform:scale(.85)}}
+.scanning{position:absolute;inset:0;z-index:4;display:flex;align-items:center;justify-content:center;pointer-events:none}
+.scan-frame{position:relative;width:min(62vw,300px);aspect-ratio:3/4}
+.scan-frame img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.22;border-radius:3px}
+.scan-frame i{position:absolute;width:34px;height:34px;border:0 solid #fff}
+.scan-frame i:nth-child(2){top:-6px;left:-6px;border-top-width:2px;border-left-width:2px}
+.scan-frame i:nth-child(3){top:-6px;right:-6px;border-top-width:2px;border-right-width:2px}
+.scan-frame i:nth-child(4){bottom:-6px;left:-6px;border-bottom-width:2px;border-left-width:2px}
+.scan-frame i:nth-child(5){bottom:-6px;right:-6px;border-bottom-width:2px;border-right-width:2px}
+.scan-line{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#fff,transparent);box-shadow:0 0 12px #fff;animation:scan 2.4s ease-in-out infinite}
+@keyframes scan{0%,100%{top:4%}50%{top:96%}}
+.loading{position:absolute;inset:0;z-index:7;display:grid;place-items:center;background:rgba(0,0,0,.55)}
+.loading i{width:42px;height:42px;border-radius:50%;border:2px solid rgba(255,255,255,.2);border-top-color:#fff;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.err{position:absolute;inset:0;z-index:8;display:grid;place-items:center;padding:24px;background:rgba(11,13,16,.94)}
+.err div{max-width:360px;text-align:center}
+.err p{margin:0 0 18px;color:var(--muted);line-height:1.6;font-size:14px}
+@media (prefers-reduced-motion: reduce){.scan-line,.g-drag,.g-pinch,.g-tap{animation:none}}
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+    "mindar-image-three": "https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"
+  }
+}
+</script>
+</head>
+<body>
+
+<!-- ================= INTRO (laptops only) ================= -->
+<main class="intro" id="intro">
+  <div class="intro-grid">
+    <div class="print"><img src="memory-target.jpg" alt="A group of friends resting on a misty, flower-dotted hilltop, the print that opens the memory" width="744" height="992"></div>
+    <section class="side" aria-labelledby="t">
+      <h1 id="t">Memory Box</h1>
+      <p>Point a phone at this print. The photo develops into depth, mist rolls across the hill, and the camera steps into the moment.</p>
+      <div class="row">
+        <button class="btn primary" id="startBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3.5"/></svg>
+          Start AR
+        </button>
+        <a class="btn" href="?preview">Play in 3D</a>
+      </div>
+      <p class="warn hidden" id="httpsWarn">Open this page from an https:// address for the camera to start.</p>
+    </section>
+  </div>
+</main>
+
+<!-- ================= AR + FILM ================= -->
+<div class="ar hidden bars" id="ar">
+  <div class="ar-stage" id="arStage"></div>
+  <div class="cinema hidden" id="cinema"></div>
+  <div class="flash" id="flash"></div>
+  <div class="scanning hidden" id="scanning">
+    <div class="scan-frame"><img src="memory-target.jpg" alt=""><i></i><i></i><i></i><i></i><div class="scan-line"></div></div>
+  </div>
+  <div class="top">
+    <button class="icon-btn" id="closeBtn" type="button" aria-label="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="dock">
+    <button class="enter hidden" id="enterBtn" type="button" aria-label="Step into the memory">
+      <svg class="ring" viewBox="0 0 36 36" aria-hidden="true"><circle class="track" cx="18" cy="18" r="16.5" fill="none" stroke-width="1.6" pathLength="100"/><circle class="prog" id="enterProg" cx="18" cy="18" r="16.5" fill="none" stroke-width="1.6" stroke-linecap="round" pathLength="100"/></svg>
+      <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="#fff3df" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 14l5-5 5 5"/><path d="M7 19l5-5 5 5"/></svg>
+    </button>
+    <div class="gestures" id="gestures" aria-hidden="true">
+      <svg class="g-drag" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>
+      <svg class="g-pinch" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>
+      <svg class="g-tap" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>
+    </div>
+  </div>
+  <div class="loading hidden" id="loading" aria-label="Loading"><i></i></div>
+  <div class="err hidden" id="err" role="alert">
+    <div>
+      <p id="errMsg">Allow camera access for this site in your browser settings, then try again.</p>
+      <button class="btn primary" id="retryBtn" type="button">Try again</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+const $ = (id) => document.getElementById(id);
+const isHttps = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+const PREVIEW = document.documentElement.classList.contains('preview');
+const REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
+if (!isHttps) $('httpsWarn').classList.remove('hidden');
+
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const clamp01 = (x) => clamp(x, 0, 1);
+const ease = (t) => 1 - Math.pow(1 - t, 3);
+const smooth = (t) => t * t * (3 - 2 * t);
+const easeInOut = (t) => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const seg = (t, s, d) => clamp01((t - s) / d);
+
+/* =====================================================================
+   SOUND: wind on the hill + a soft glass chime (both start after a touch)
+   ===================================================================== */
+let actx = null, windGain = null;
+function audio(){ try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === 'suspended') actx.resume(); } catch (e) {} return actx; }
+function startWind(){
+  const a = audio(); if (!a || windGain) return;
+  const len = a.sampleRate * 4, buf = a.createBuffer(1, len, a.sampleRate), d = buf.getChannelData(0);
+  let last = 0; for (let i = 0; i < len; i++){ const w = Math.random() * 2 - 1; last = (last + .02 * w) / 1.02; d[i] = last * 3.5; }   // brown noise
+  const src = a.createBufferSource(); src.buffer = buf; src.loop = true;
+  const lp = a.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 520; lp.Q.value = .7;
+  windGain = a.createGain(); windGain.gain.value = 0;
+  const lfo = a.createOscillator(), lfoG = a.createGain(); lfo.frequency.value = .09; lfoG.gain.value = 260; lfo.connect(lfoG); lfoG.connect(lp.frequency); lfo.start();
+  src.connect(lp); lp.connect(windGain); windGain.connect(a.destination); src.start();
+  windGain.gain.linearRampToValueAtTime(.16, a.currentTime + 4);
+}
+function chime(f0 = 880){
+  const a = audio(); if (!a) return;
+  const t = a.currentTime, out = a.createGain(); out.gain.value = .07; out.connect(a.destination);
+  [[1, 1, 2.6], [1.5, .45, 2.0], [2.0, .3, 1.6], [3.01, .14, 1.0]].forEach(([m, g0, dur], k) => {
+    const o = a.createOscillator(), g = a.createGain(); o.type = 'sine'; o.frequency.value = f0 * m;
+    g.gain.setValueAtTime(0, t + k * .045); g.gain.linearRampToValueAtTime(g0, t + k * .045 + .01); g.gain.exponentialRampToValueAtTime(.0001, t + k * .045 + dur);
+    o.connect(g); g.connect(out); o.start(t + k * .045); o.stop(t + k * .045 + dur + .1);
+  });
+}
+
+/* =====================================================================
+   LOAD THE MEMORY: two depth layers (photo + painted-in background)
+   ===================================================================== */
+const PH = 4 / 3;                       // the print is 3:4; its width is 1 unit
+async function loadMemory(){
+  const [meta, buf, mbuf, fgTex, bgTex] = await Promise.all([
+    fetch('memory.json').then((r) => r.json()),
+    fetch('depth.bin').then((r) => r.arrayBuffer()),
+    fetch('mask.bin').then((r) => r.arrayBuffer()),
+    new THREE.TextureLoader().loadAsync('fg.jpg'),
+    new THREE.TextureLoader().loadAsync('bg.jpg')
+  ]);
+  [fgTex, bgTex].forEach((t) => { t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; t.generateMipmaps = true; });
+  const [fw, fh] = meta.fg, [bw, bh] = meta.bg;
+  const fg = new Uint16Array(buf, 0, fw * fh), bg = new Uint16Array(buf, fw * fh * 2, bw * bh);
+  // the original camera sits Dv in front of the print, so its view through the print is the photo itself
+  const tanV = meta.cy / meta.f;
+  const Dv = (PH / 2) / tanV;
+  const S = 3.37;                          // scene metres -> print widths (an A3 print is ~0.3 m wide)
+  return { meta, fgTex, bgTex, fg, bg, mask: new Uint8Array(mbuf), Dv, S };
+}
+
+/* depth grid -> mesh in print space, with a "flat" copy lying on the print for the develop effect */
+function gridMesh(D, gw, gh, data, cut, push, mask){
+  const { meta, Dv, S } = data;
+  const n = gw * gh, pos = new Float32Array(n * 3), flat = new Float32Array(n * 3), uv = new Float32Array(n * 2);
+  const sky = new Uint8Array(n), z = new Float32Array(n);
+  for (let i = 0; i < gh; i++) for (let j = 0; j < gw; j++){
+    const k = i * gw + j, u = (j + .5) / gw, v = (i + .5) / gh;
+    const q = D[k]; sky[k] = q === 65535 ? 1 : 0;
+    const zz = (sky[k] ? 6.4 : meta.zmin + q / 65534 * meta.zrange) * push; z[k] = zz;
+    const X = (u * meta.W - meta.cx) / meta.f, Y = (v * meta.H - meta.cy) / meta.f;
+    pos[k * 3] = X * zz * S; pos[k * 3 + 1] = -Y * zz * S; pos[k * 3 + 2] = Dv - zz * S;
+    // the same point projected onto the print plane (z = 0) along the original camera's ray
+    flat[k * 3] = X * Dv; flat[k * 3 + 1] = -Y * Dv; flat[k * 3 + 2] = push > 1 ? .0004 : .0012;
+    uv[k * 2] = u; uv[k * 2 + 1] = 1 - v;
+  }
+  const idx = [];
+  for (let i = 0; i < gh - 1; i++) for (let j = 0; j < gw - 1; j++){
+    const a = i * gw + j, b = a + 1, c = a + gw, d = c + 1;
+    if (sky[a] || sky[b] || sky[c] || sky[d]) continue;
+    const t1 = [a, c, b], t2 = [b, c, d];
+    [t1, t2].forEach((t) => {
+      const zs = t.map((k) => z[k]); if (cut && Math.max(...zs) / Math.min(...zs) > cut) return;
+      // cut cleanly around the people: drop triangles that straddle a person's outline
+      if (mask){ const ms = mask[t[0]] + mask[t[1]] + mask[t[2]]; if (ms > 0 && ms < 3 && Math.max(...zs) / Math.min(...zs) > 1.012) return; }
+      idx.push(...t);
+    });
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('aFlat', new THREE.BufferAttribute(flat, 3));
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  g.setIndex(new THREE.BufferAttribute(new Uint32Array(idx), 1));
+  g.computeBoundingSphere();
+  return g;
+}
+
+/* soft textures */
+function glowTexture(){
+  const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+  const r = g.createRadialGradient(64, 64, 0, 64, 64, 64); r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(.25, 'rgba(255,250,240,.6)'); r.addColorStop(1, 'rgba(255,240,220,0)');
+  g.fillStyle = r; g.fillRect(0, 0, 128, 128); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+function petalTexture(){
+  const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+  g.translate(32, 32);
+  for (let i = 0; i < 5; i++){ g.rotate(Math.PI * 2 / 5); const gr = g.createRadialGradient(0, -13, 0, 0, -13, 13); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(250,246,255,.0)');
+    g.fillStyle = gr; g.beginPath(); g.ellipse(0, -12, 7, 12, 0, 0, Math.PI * 2); g.fill(); }
+  g.fillStyle = 'rgba(255,214,120,1)'; g.beginPath(); g.arc(0, 0, 3.2, 0, Math.PI * 2); g.fill();
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+
+/* =====================================================================
+   THE MEMORY SCENE (shared by the AR view and the film)
+   ===================================================================== */
+const NOISE = `
+  float h3(vec3 p){ p = fract(p * .3183099 + .1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+  float n3(vec3 x){ vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(mix(h3(i), h3(i + vec3(1,0,0)), f.x), mix(h3(i + vec3(0,1,0)), h3(i + vec3(1,1,0)), f.x), f.y),
+               mix(mix(h3(i + vec3(0,0,1)), h3(i + vec3(1,0,1)), f.x), mix(h3(i + vec3(0,1,1)), h3(i + vec3(1,1,1)), f.x), f.y), f.z); }
+  float fbm(vec3 p){ float a = .5, s = 0.0; for (int i = 0; i < 5; i++){ s += a * n3(p); p = p * 2.03 + 1.7; a *= .5; } return s; }`;
+
+function buildMemory(parent, data, opts = {}){
+  const cinema = !!opts.cinema;
+  const root = new THREE.Group(); parent.add(root);
+  const { Dv, S, meta } = data;
+  const skyCol = new THREE.Color().setRGB(...meta.sky, THREE.SRGBColorSpace);
+  const glowTex = glowTexture();
+
+  // 1. the wall around the print: invisible, but hides what is behind it (a window into the memory)
+  const occMat = new THREE.MeshBasicMaterial({ colorWrite: false });
+  [[0, PH / 2 + 3, 12, 6], [0, -PH / 2 - 3, 12, 6], [-.5 - 3, 0, 6, PH + .2], [.5 + 3, 0, 6, PH + .2]].forEach(([x, y, w, h]) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), occMat); m.position.set(x, y, 0); m.renderOrder = -1; root.add(m);
+  });
+
+  // 2. the sky: a dome of slowly moving fog, lit softly from the upper right
+  const U = { uTime: { value: 0 }, uDev: { value: 0 }, uSun: { value: 0 } };
+  const domeMat = new THREE.ShaderMaterial({
+    uniforms: { uTime: U.uTime, uSky: { value: skyCol }, uDev: U.uDev, uSun: U.uSun }, side: THREE.BackSide, depthWrite: false,
+    vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `uniform float uTime, uDev, uSun; uniform vec3 uSky; varying vec3 vDir; ${NOISE}
+      void main(){
+        vec3 d = normalize(vDir);
+        float n = fbm(vec3(d.x * 2.2 + uTime * .012, d.y * 3.0, d.z * 2.2 - uTime * .008));
+        vec3 c = uSky * (.86 + .22 * n) - vec3(.05, .04, .02) * smoothstep(.05, -.25, d.y);
+        float sun = pow(max(dot(d, normalize(vec3(.55, .42, -.72))), 0.0), 18.0);
+        c += vec3(1.0, .86, .62) * sun * .55 * uSun;
+        gl_FragColor = vec4(c * uDev, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`
+  });
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(40, 48, 24), domeMat);
+  dome.position.set(0, 0, Dv); dome.renderOrder = 0; root.add(dome);
+
+  // 3. the photograph on its depth (front layer) and the painted-in hillside behind it (back layer)
+  const photoU = {
+    uTime: U.uTime, uDev: U.uDev, uInflate: { value: 0 }, uFogCol: { value: skyCol.clone() }, uFog: { value: cinema ? .035 : .02 },
+    uLight: { value: new THREE.Vector3() }, uLightAmt: { value: 0 }, uSweep: { value: 0 }, uBloom: { value: new THREE.Vector3(0, 0, -99) }, uBloomT: { value: 99 },
+    uCamL: { value: new THREE.Vector3(0, 0, 3) }              // the viewer, in print units (the AR camera uses its own units)
+  };
+  const photoMat = (map) => new THREE.ShaderMaterial({
+    uniforms: { ...photoU, map: { value: map } }, depthWrite: true, side: THREE.DoubleSide,
+    vertexShader: `attribute vec3 aFlat; uniform float uInflate; varying vec2 vUv; varying vec3 vP; varying float vD;
+      void main(){ vUv = uv; vec3 p = mix(aFlat, position, uInflate); vP = p; vec4 mv = modelViewMatrix * vec4(p, 1.0); vD = -mv.z; gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `uniform sampler2D map; uniform float uTime, uDev, uFog, uLightAmt, uSweep, uBloomT, uInflate; uniform vec3 uFogCol, uLight, uBloom, uCamL;
+      varying vec2 vUv; varying vec3 vP; varying float vD;
+      void main(){
+        vec3 c = texture2D(map, vUv).rgb;
+        // a slow band of light breaking through the fog
+        float band = exp(-pow((vP.x * .6 - vP.y * .35 + vP.z * .05) - (mod(uTime * .22, 14.0) - 7.0), 2.0) * .35);
+        c *= 1.0 + band * .22 * uSweep;
+        // warm glow from the drifting light
+        float dl = distance(vP, uLight); c += c * vec3(1.0, .82, .55) * uLightAmt * .9 / (1.0 + dl * dl * 1.6);
+        // a ring of light where flowers were called up
+        float br = distance(vP, uBloom), rr = uBloomT * 1.8;
+        c += vec3(1.0, .93, .82) * exp(-pow((br - rr) * 4.0, 2.0)) * max(0.0, 1.0 - uBloomT * .5) * .5;
+        // mist thickens with distance (only once the photo has depth)
+        float f = 1.0 - exp(-pow(uFog * distance(vP, uCamL), 2.0));
+        c = mix(c, uFogCol, f * uInflate);
+        // the edges of the photograph dissolve into the mist once it has depth
+        float e = min(min(vUv.x, 1.0 - vUv.x), min(vUv.y * 1.6, 1.0 - vUv.y));
+        c = mix(c, uFogCol * .97, (1.0 - smoothstep(.0, .09, e)) * uInflate);
+        gl_FragColor = vec4(c * uDev, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`
+  });
+  const bgMesh = new THREE.Mesh(gridMesh(data.bg, meta.bg[0], meta.bg[1], data, 0, 1.006), photoMat(data.bgTex));
+  const fgMesh = new THREE.Mesh(gridMesh(data.fg, meta.fg[0], meta.fg[1], data, 1.065, 1.0, data.mask), photoMat(data.fgTex));
+  bgMesh.frustumCulled = fgMesh.frustumCulled = false;
+  root.add(bgMesh, fgMesh);
+
+  // the group's centre, in print space (where the friends sit)
+  const unproject = (u, v, z) => new THREE.Vector3(((u * meta.W - meta.cx) / meta.f) * z * S, -((v * meta.H - meta.cy) / meta.f) * z * S, Dv - z * S);
+  const FOCUS = unproject(.47, .5, 3.15);
+
+  // 4. drifting mist sheets between the friends and the far fog
+  const mistMat = new THREE.ShaderMaterial({
+    uniforms: { uTime: U.uTime, uCol: { value: skyCol }, uA: { value: 0 }, uSeed: { value: 0 } }, transparent: true, depthWrite: false,
+    vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `uniform float uTime, uA, uSeed; uniform vec3 uCol; varying vec2 vUv; ${NOISE}
+      void main(){
+        float n = fbm(vec3(vUv.x * 3.0 + uTime * .025 + uSeed, vUv.y * 2.0, uTime * .02 + uSeed));
+        float edge = smoothstep(0.0, .25, vUv.x) * smoothstep(1.0, .75, vUv.x) * smoothstep(0.0, .35, vUv.y) * smoothstep(1.0, .55, vUv.y);
+        gl_FragColor = vec4(uCol, smoothstep(.38, .78, n) * edge * uA);
+        #include <colorspace_fragment>
+      }`
+  });
+  const mists = [];
+  [[-1.2, -3.2, -5.5, 9, 2.6, .5], [1.4, -2.6, -9.5, 12, 3.2, .55], [-.6, -1.8, -13, 16, 4, .6], [2.2, -1.2, -16.5, 18, 4.5, .55], [-2.5, -.9, -19, 20, 5, .5]].forEach(([x, y, z, w, h, a], i) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mistMat.clone());
+    m.material.uniforms.uTime = U.uTime; m.material.uniforms.uSeed.value = i * 7.3; m.userData = { a, x };
+    m.position.set(x, y, z); root.add(m); mists.push(m);
+  });
+
+  // 5. tiny drifting motes (pollen in the wet air)
+  const MN = cinema ? 900 : 300, mp = new Float32Array(MN * 3), ms = new Float32Array(MN);
+  for (let i = 0; i < MN; i++){ mp[i * 3] = (Math.random() - .5) * 8; mp[i * 3 + 1] = -3 + Math.random() * 5; mp[i * 3 + 2] = -1 - Math.random() * 11; ms[i] = Math.random(); }
+  const mg = new THREE.BufferGeometry(); mg.setAttribute('position', new THREE.BufferAttribute(mp, 3)); mg.setAttribute('seed', new THREE.BufferAttribute(ms, 1));
+  const moteU = { uTime: U.uTime, uPx: { value: 1 }, uA: { value: 0 } };
+  const motes = new THREE.Points(mg, new THREE.ShaderMaterial({
+    uniforms: moteU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    vertexShader: `attribute float seed; uniform float uTime, uPx, uA; varying float vA;
+      void main(){ vec3 p = position; p.x += mod(uTime * (.05 + seed * .08) + seed * 8.0, 8.0) - 4.0; p.y += sin(uTime * .4 + seed * 30.0) * .12;
+        vec4 mv = modelViewMatrix * vec4(p, 1.0); vA = uA * (.25 + .75 * seed) * (.5 + .5 * sin(uTime * 1.7 + seed * 40.0));
+        gl_PointSize = clamp(uPx * .012 * length(modelViewMatrix[0].xyz) * (.5 + seed) / -mv.z, 0.0, 9.0); gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `varying float vA; void main(){ vec2 c = gl_PointCoord - .5; float d = dot(c, c); if (d > .25) discard; gl_FragColor = vec4(1.0, .97, .9, smoothstep(.25, 0.0, d) * vA); }`
+  }));
+  motes.frustumCulled = false; root.add(motes);
+
+  // 6. white flower petals carried on the wind (and the burst called up by a tap)
+  const PN = cinema ? 160 : 60, petalTex = petalTexture();
+  const petals = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: petalTex, transparent: true, depthWrite: false, side: THREE.DoubleSide, opacity: 0 }), PN);
+  petals.frustumCulled = false; root.add(petals);
+  const P = [], dummy = new THREE.Object3D();
+  const spawnPetal = (p, around) => {
+    if (around){ p.x = around.x + (Math.random() - .5) * .5; p.y = around.y + Math.random() * .2; p.z = around.z + (Math.random() - .5) * .5;
+      p.vx = (Math.random() - .5) * .6; p.vy = .6 + Math.random() * 1.0; p.vz = (Math.random() - .5) * .6; }
+    else { p.x = -5 - Math.random() * 3; p.y = -2.6 + Math.random() * 2.2; p.z = -1.5 - Math.random() * 10; p.vx = .25 + Math.random() * .35; p.vy = (Math.random() - .5) * .08; p.vz = 0; }
+    p.rx = Math.random() * 6.28; p.ry = Math.random() * 6.28; p.sr = (Math.random() - .5) * 3; p.s = .05 + Math.random() * .06; p.life = 0;
+    return p;
+  };
+  for (let i = 0; i < PN; i++){ const p = spawnPetal({}); p.x = -5 + Math.random() * 10; P.push(p); }
+
+  // 7. a small warm light drifting among the friends
+  const light = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xffe2b8, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }));
+  light.scale.setScalar(.45); root.add(light);
+  const lightCore = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xffffff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }));
+  lightCore.scale.setScalar(.1); root.add(lightCore);
+
+  /* --- animation --- */
+  const st = { foundAt: null, lostAt: null, bloomAt: -99 };
+  const tmp = new THREE.Vector3(), camL = new THREE.Vector3();
+  let last = performance.now() / 1000;
+
+  function bloomAt(point){
+    photoU.uBloom.value.copy(point); st.bloomAt = performance.now() / 1000;
+    let n = 0; for (const p of P){ if (n++ > PN * .45) break; spawnPetal(p, point); }
+    chime(660 + Math.random() * 300);
+  }
+
+  function update(renderer, camera){
+    const now = performance.now() / 1000, dt = Math.min(.05, now - last); last = now;
+    U.uTime.value = now;
+    moteU.uPx.value = camera.projectionMatrix.elements[5] * renderer.domElement.height * .5;
+    if (st.foundAt === null) return;
+    const t = now - st.foundAt;
+    // the print fades up flat, then develops into depth
+    U.uDev.value = ease(seg(t, 0, .6));
+    photoU.uInflate.value = easeInOut(seg(t, .7, 2.4));
+    U.uSun.value = seg(t, 2.0, 2.0);
+    photoU.uSweep.value = seg(t, 3, 2);
+    const air = seg(t, 1.6, 2.0);
+    camera.getWorldPosition(camL); root.worldToLocal(camL); photoU.uCamL.value.copy(camL);
+    mists.forEach((m) => { m.material.uniforms.uA.value = m.userData.a * air * (cinema ? 1 : .7); m.position.x = m.userData.x + Math.sin(now * .05 + m.userData.x) * .6; m.lookAt(camL.x, m.position.y, camL.z); });
+    moteU.uA.value = air;
+    petals.material.opacity = air * .95;
+    // the drifting light: a lazy figure-of-eight around the group
+    const a = now * .23;
+    tmp.set(FOCUS.x + Math.sin(a) * 1.9, FOCUS.y + .9 + Math.sin(a * 2.0) * .35, FOCUS.z + Math.cos(a) * 1.3);
+    light.position.copy(tmp); lightCore.position.copy(tmp);
+    const la = seg(t, 2.8, 1.5) * (.8 + .2 * Math.sin(now * 2.2));
+    light.material.opacity = .55 * la; lightCore.material.opacity = .9 * la;
+    photoU.uLight.value.copy(tmp); photoU.uLightAmt.value = la;
+    photoU.uBloomT.value = now - st.bloomAt;
+    // petals
+    for (let i = 0; i < PN; i++){
+      const p = P[i]; p.life += dt;
+      p.vx += ((.32 + Math.sin(now * .3 + i) * .1) - p.vx) * dt * .4; p.vy += (-.06 - p.vy) * dt * .5; p.vz *= 1 - dt * .4;
+      p.x += p.vx * dt; p.y += p.vy * dt + Math.sin(now * 1.3 + i) * .002; p.z += p.vz * dt;
+      p.rx += p.sr * dt; p.ry += p.sr * .7 * dt;
+      if (p.x > 6 || p.y < -4.5 || p.y > 1.4) spawnPetal(p);
+      dummy.position.set(p.x, p.y, p.z); dummy.rotation.set(p.rx, p.ry, 0); dummy.scale.setScalar(p.s); dummy.updateMatrix(); petals.setMatrixAt(i, dummy.matrix);
+    }
+    petals.instanceMatrix.needsUpdate = true;
+  }
+
+  return {
+    root, update, bloomAt, FOCUS, fgMesh, st, unproject,
+    found(){ const now = performance.now() / 1000; if (st.foundAt === null || st.lostAt === null || now - st.lostAt > 1.5) st.foundAt = now; st.lostAt = null; },
+    lost(){ st.lostAt = performance.now() / 1000; },
+    developed(){ st.foundAt = performance.now() / 1000 - 8; st.lostAt = null; }
+  };
+}
+
+/* =====================================================================
+   THE FILM: fly through the print into the memory, then drift.
+   Drag = look around · pinch / wheel = move closer · tap = flowers bloom.
+   ===================================================================== */
+function startFilm(data, from){
+  const box = $('cinema'); box.classList.remove('hidden');
+  const W = () => box.clientWidth || innerWidth, H = () => box.clientHeight || innerHeight;
+  const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+  renderer.setSize(W(), H());
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.NoToneMapping;                     // keep the photograph's own colours
+  renderer.setClearColor(0x000000, 0);
+  box.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  if (from.background) scene.background = new THREE.Color(from.background);
+  const camera = new THREE.PerspectiveCamera(from.fov || 45, W() / H(), .02, 120);
+  const holder = new THREE.Group(); scene.add(holder);
+  const fx = buildMemory(holder, data, { cinema: true });
+  if (from.develop) fx.found(); else fx.developed();
+  const F = fx.FOCUS;
+
+  // post: soft bloom + a gentle "remembered" grade, vignette, grain and a whisper of edge fringe
+  const composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  composer.addPass(new UnrealBloomPass(new THREE.Vector2(W() / 2, H() / 2), .3, .8, .9));
+  composer.addPass(new OutputPass());
+  const grade = new ShaderPass({
+    uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uAspect: { value: W() / H() } },
+    vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime, uAspect; varying vec2 vUv;
+      float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+      void main(){
+        vec2 q = vUv - .5; float r = length(q * vec2(uAspect, 1.0));
+        vec2 off = q * r * .006;
+        vec3 c = vec3(texture2D(tDiffuse, vUv + off).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - off).b);
+        c = mix(c, c * vec3(1.04, 1.0, .95), .7);                                   // warm memory
+        c = (c - .5) * 1.07 + .5 + .012;                                             // a touch of contrast, faintly lifted blacks
+        c *= mix(1.0, smoothstep(1.05, .3, r), .6);                                  // vignette
+        c += (h(vUv * 813.0 + fract(uTime) * 41.0) - .5) * .028;                     // grain
+        gl_FragColor = vec4(c, 1.0);
+      }`
+  });
+  composer.addPass(grade);
+
+  // fly-in path: from the viewer, through the print, to a spot a little above and in front of the friends
+  const startPos = from.pos.clone(), startLook = from.look.clone();
+  const fovStart = camera.fov, fovIn = 31, flyDelay = from.delay || 0, FLY = REDUCE ? 2.4 : 5.6;
+  const inside0 = fx.unproject(.49, .49, 1.55);                    // 1.55 m in front of where the photo was taken, near eye level
+  const curve = new THREE.CatmullRomCurve3([
+    startPos, startPos.clone().lerp(new THREE.Vector3(0, .05, .2), .55), new THREE.Vector3(0, .05, -.05),
+    new THREE.Vector3(0, .02, (inside0.z - .05) * .5), inside0
+  ], false, 'centripetal', .5);
+
+  const ctl = { yaw: 0, pitch: 0, r: inside0.distanceTo(F), vy: 0, vp: 0, lastTouch: -99, pointers: new Map(), pinch0: 0, r0: 0, tapStart: null };
+  const LIM = { yaw: .26, pMin: -.05, pMax: .14, rMin: ctl.r * .68, rMax: ctl.r * 1.08 };
+  const el = renderer.domElement; el.style.touchAction = 'none';
+  const raycaster = new THREE.Raycaster(), ndc = new THREE.Vector2();
+  el.addEventListener('pointerdown', (e) => {
+    el.setPointerCapture?.(e.pointerId); startWind();
+    ctl.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (ctl.pointers.size === 1) ctl.tapStart = { x: e.clientX, y: e.clientY, t: performance.now() };
+    if (ctl.pointers.size === 2){ const [a, b] = [...ctl.pointers.values()]; ctl.pinch0 = Math.hypot(a.x - b.x, a.y - b.y); ctl.r0 = ctl.r; ctl.tapStart = null; }
+    ctl.lastTouch = performance.now() / 1000; $('gestures').classList.remove('on');
+  });
+  el.addEventListener('pointermove', (e) => {
+    const p = ctl.pointers.get(e.pointerId); if (!p) return;
+    const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+    if (ctl.pointers.size >= 2){ const [a, b] = [...ctl.pointers.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y); if (ctl.pinch0 > 0) ctl.r = clamp(ctl.r0 * ctl.pinch0 / d, LIM.rMin, LIM.rMax); }
+    else if (inside){ ctl.vy = -dx * .0018; ctl.vp = dy * .0012; ctl.yaw = clamp(ctl.yaw + ctl.vy, -LIM.yaw, LIM.yaw); ctl.pitch = clamp(ctl.pitch + ctl.vp, LIM.pMin, LIM.pMax); }
+    if (ctl.tapStart && Math.hypot(e.clientX - ctl.tapStart.x, e.clientY - ctl.tapStart.y) > 8) ctl.tapStart = null;
+    ctl.lastTouch = performance.now() / 1000;
+  });
+  const up = (e) => {
+    ctl.pointers.delete(e.pointerId);
+    if (ctl.tapStart && performance.now() - ctl.tapStart.t < 450){
+      // flowers bloom where you touched the hillside
+      const r = el.getBoundingClientRect(); ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+      raycaster.setFromCamera(ndc, camera);
+      const hit = raycaster.intersectObject(fx.fgMesh, false)[0];
+      fx.bloomAt(hit ? hit.point : F.clone().add(new THREE.Vector3(0, .3, 0)));
+    }
+    ctl.tapStart = null; ctl.lastTouch = performance.now() / 1000;
+  };
+  el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+  el.addEventListener('wheel', (e) => { e.preventDefault(); ctl.r = clamp(ctl.r * (1 + e.deltaY * .0008), LIM.rMin, LIM.rMax); ctl.lastTouch = performance.now() / 1000; }, { passive: false });
+  addEventListener('resize', () => { renderer.setSize(W(), H()); composer.setSize(W(), H()); camera.aspect = W() / H(); camera.updateProjectionMatrix(); grade.uniforms.uAspect.value = W() / H(); });
+
+  let crossed = false, inside = false, insideAt = 0; const t0 = performance.now() / 1000;
+  const camPos = new THREE.Vector3(), look = new THREE.Vector3(), tmp = new THREE.Vector3();
+  const base = inside0.clone().sub(F);                              // resting offset from the friends
+  const baseYaw = Math.atan2(base.x, base.z), basePitch = Math.asin(base.y / base.length());
+
+  function cross(){
+    crossed = true;
+    $('flash').classList.remove('go'); void $('flash').offsetWidth; $('flash').classList.add('go');
+    $('arStage').style.opacity = '0';
+    setTimeout(() => { renderer.setClearColor(0x000000, 1); scene.background = null; from.onCrossed && from.onCrossed(); }, 400);
+    setTimeout(() => { $('ar').classList.add('on'); }, 800);
+  }
+
+  renderer.setAnimationLoop(() => {
+    const now = performance.now() / 1000, t = now - t0;
+    const k = clamp01((t - flyDelay) / FLY), e = easeInOut(k);
+    if (!inside){
+      curve.getPointAt(e, camPos);
+      look.copy(startLook).lerp(F, smooth(clamp01(k * 1.3)));
+      camera.position.copy(camPos); camera.lookAt(look);
+      camera.fov = fovStart + (fovIn - fovStart) * e; camera.updateProjectionMatrix();
+      if (!crossed && camPos.z < .05 && k > 0) cross();
+      if (k >= 1){ inside = true; insideAt = now; setTimeout(() => $('gestures').classList.add('on'), 400); setTimeout(() => $('gestures').classList.remove('on'), 7500); }
+    } else {
+      const idle = clamp01((now - ctl.lastTouch - 2.5) / 3), ti = now - insideAt;
+      ctl.vy *= .9; ctl.vp *= .9;
+      if (Math.abs(ctl.vy) > .0003 || Math.abs(ctl.vp) > .0003){ ctl.yaw = clamp(ctl.yaw + ctl.vy, -LIM.yaw, LIM.yaw); ctl.pitch = clamp(ctl.pitch + ctl.vp, LIM.pMin, LIM.pMax); }
+      // slow cinematic drift: a gentle arc and a slow push in, as if remembering
+      const aY = Math.sin(ti * .07) * .22, aP = .05 + Math.sin(ti * .09) * .05, aR = LIM.rMax * .92 - (LIM.rMax * .92 - LIM.rMin * 1.15) * (.5 - .5 * Math.cos(ti * .045));
+      ctl.yaw += (aY - ctl.yaw) * .006 * idle; ctl.pitch += (aP - ctl.pitch) * .006 * idle; ctl.r += (aR - ctl.r) * .004 * idle;
+      const yaw = baseYaw + ctl.yaw, pitch = basePitch + ctl.pitch, cp = Math.cos(pitch);
+      camPos.set(F.x + Math.sin(yaw) * cp * ctl.r, F.y + Math.sin(pitch) * ctl.r, F.z + Math.cos(yaw) * cp * ctl.r);
+      camPos.x += Math.sin(now * .8) * .006; camPos.y += Math.sin(now * 1.1) * .005;   // hand-held breathing
+      camera.position.lerp(camPos, .1);
+      look.copy(F).add(tmp.set(Math.sin(ti * .11) * .12, .05 + Math.sin(ti * .13) * .05, 0));
+      camera.lookAt(look);
+    }
+    fx.update(renderer, camera);
+    grade.uniforms.uTime.value = now;
+    if (crossed) composer.render(); else renderer.render(scene, camera);
+  });
+}
+
+/* =====================================================================
+   RUN
+   ===================================================================== */
+let memData = null;
+const getMemory = () => memData || (memData = loadMemory());
+
+async function startAR(){
+  $('intro').classList.add('hidden'); $('ar').classList.remove('hidden');
+  $('err').classList.add('hidden'); $('loading').classList.remove('hidden');
+  try {
+    const [{ MindARThree }, data] = await Promise.all([import('mindar-image-three'), getMemory()]);
+    const mindar = new MindARThree({ container: $('arStage'), imageTargetSrc: 'targets.mind', maxTrack: 1, uiLoading: 'no', uiError: 'no', uiScanning: '#scanning', filterMinCF: .0001, filterBeta: .001 });
+    const { renderer, scene, camera } = mindar;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    camera.far = 200; camera.updateProjectionMatrix();
+    const anchor = mindar.addAnchor(0);
+    const fx = buildMemory(anchor.group, data);
+    let tracking = false, entering = false, readyAt = null;
+    anchor.onTargetFound = () => { tracking = true; fx.found(); };
+    anchor.onTargetLost = () => { tracking = false; fx.lost(); };
+    await mindar.start();
+    $('loading').classList.add('hidden');
+    const enter = () => {
+      if (entering || !tracking) return; entering = true;
+      $('enterBtn').classList.add('hidden'); startWind();
+      renderer.domElement.style.opacity = '0';
+      anchor.group.updateMatrixWorld(true); camera.updateMatrixWorld(true);
+      const inv = anchor.group.matrixWorld.clone().invert();
+      const pos = camera.getWorldPosition(new THREE.Vector3()).applyMatrix4(inv);
+      const dir = camera.getWorldDirection(new THREE.Vector3()).transformDirection(inv);
+      startFilm(data, { pos, look: pos.clone().add(dir.multiplyScalar(pos.length())), fov: camera.fov, onCrossed: () => { renderer.setAnimationLoop(null); try { mindar.stop(); } catch (e) {} } });
+    };
+    $('enterBtn').addEventListener('click', enter);
+    renderer.setAnimationLoop(() => {
+      fx.update(renderer, camera); renderer.render(scene, camera);
+      if (tracking && !entering && fx.st.foundAt !== null){
+        const t = performance.now() / 1000 - fx.st.foundAt;
+        if (t > 5){
+          $('enterBtn').classList.remove('hidden');
+          if (readyAt === null) readyAt = performance.now() / 1000;
+          const p = clamp01((performance.now() / 1000 - readyAt) / 4.5);
+          $('enterProg').style.strokeDashoffset = String(100 - p * 100);
+          if (p >= 1) enter();
+        }
+      } else if (!tracking && !entering){ readyAt = null; $('enterBtn').classList.add('hidden'); }
+    });
+  } catch (e) {
+    console.error(e);
+    $('loading').classList.add('hidden');
+    $('errMsg').textContent = !isHttps ? 'The camera only starts on an https:// page.' : 'Allow camera access for this site in your browser settings, then try again.';
+    $('err').classList.remove('hidden');
+  }
+}
+
+async function startPreview(){
+  $('intro').classList.add('hidden'); $('ar').classList.remove('hidden'); $('loading').classList.remove('hidden');
+  const data = await getMemory();
+  $('loading').classList.add('hidden');
+  startFilm(data, { pos: new THREE.Vector3(.12, -.05, 2.6), look: new THREE.Vector3(0, -.05, 0), fov: 38, background: 0x2b2e33, develop: true, delay: 5.6 });
+}
+
+$('startBtn').addEventListener('click', startAR);
+$('retryBtn').addEventListener('click', () => location.reload());
+$('closeBtn').addEventListener('click', () => { location.href = location.pathname; });
+if (PREVIEW) startPreview();
+else if (document.documentElement.classList.contains('auto')) startAR();
+</script>
+</body>
+</html>
