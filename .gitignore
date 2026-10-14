@@ -1,0 +1,9 @@
+node_modules/
+qa/*.png
+qa/*.npy
+qa/chromium
+qa/module.mjs
+qa/*.y4m
+__pycache__/
+_site/
+
