@@ -97,7 +97,8 @@ const grade = new ShaderPass({
       vec2 d = vUv - .5; float r = dot(d, d);
       vec3 c = vec3(texture2D(tDiffuse, vUv - d * r * .02).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv + d * r * .02).b);
       c *= 1.0 - r * 1.1;                                     // vignette
-      float g = fract(sin(dot(floor(vUv * uRes) + fract(uTime * 7.13) * 91.7, vec2(12.9898, 78.233))) * 43758.5453);
+      vec2 px = floor(vUv * uRes) + floor(fract(uTime * 7.13) * 64.0) * vec2(5.588, 3.17);
+      float g = fract(52.9829189 * fract(dot(px, vec2(.06711056, .00583715))));   // stable at any resolution
       c += (g - .5) * .018;                                   // fine film grain
       gl_FragColor = vec4(max(c, 0.0), 1.0);
     }`
@@ -280,7 +281,10 @@ function makeMemory(meta, buf, i){
   const C = grp.position.clone();
   const view = grp.localToWorld(focus.clone().multiplyScalar(-1));    // where the photo was taken from
   const hfov = 2 * Math.atan(meta.W / 2 / meta.f), vfov = 2 * Math.atan(meta.H / 2 / meta.f);
-  const m = { i, meta, grp, pts, U, C, view, R, hfov, vfov, n, revealed: false, level: 0, levelT: 0, waveT: -1, ripT: -1, frac: .4, born: now(), flatFrom: 0, flatTo: 0, flatT: 0, flatD: 1 };
+  // the corners of the resting photo card, in the world (the soft edge trims about 15%)
+  const plane = -meta.focus[2], corners = [[.08, .08], [.92, .08], [.08, .92], [.92, .92]].map(([u, v]) =>
+    pts.localToWorld(new V3((u * meta.W - meta.cx) / meta.f * plane * 1.55, -(v * meta.H - meta.cy) / meta.f * plane * 1.55, -plane)));
+  const m = { i, meta, grp, pts, U, C, view, R, hfov, vfov, n, corners, revealed: false, level: 0, levelT: 0, waveT: -1, ripT: -1, frac: .4, born: now(), flatFrom: 0, flatTo: 0, flatT: 0, flatD: 1 };
   g.setDrawRange(0, Math.floor(n * m.frac));
   mems[i] = m;
   return m;
@@ -364,9 +368,12 @@ function overFov(){
   // widest angle any memory needs, seen from the overview point (near ones look bigger)
   const fwd = OVER.look.clone().sub(OVER.pos).normalize(), right = new V3().crossVectors(fwd, new V3(0, 1, 0)).normalize(), upv = new V3().crossVectors(right, fwd);
   let th = 0, tv = 0;
-  for (const l of LAYOUT){ const d = new V3(...l.C).sub(OVER.pos), z = d.dot(fwd), r = 1.25 * SCALE;
+  const loaded = mems.filter(Boolean);
+  if (loaded.length) for (const m of loaded) for (const c of m.corners){ const d = c.clone().sub(OVER.pos), z = d.dot(fwd);
+    th = Math.max(th, Math.abs(d.dot(right)) / z); tv = Math.max(tv, Math.abs(d.dot(upv)) / z); }
+  else for (const l of LAYOUT){ const d = new V3(...l.C).sub(OVER.pos), z = d.dot(fwd), r = 2.0 * SCALE;
     th = Math.max(th, (Math.abs(d.dot(right)) + r) / z); tv = Math.max(tv, (Math.abs(d.dot(upv)) + r * .75) / z); }
-  const vf = 2 * Math.atan(Math.max(tv, th / camera.aspect)) * 1.06;
+  const vf = 2 * Math.atan(Math.max(tv, th / camera.aspect) * 1.12) * 1.1;
   return clamp(THREE.MathUtils.radToDeg(vf), 34, 82);
 }
 function memFov(m){
