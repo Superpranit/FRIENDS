@@ -22,7 +22,14 @@ html,body{margin:0;height:100%;background:#000;color:#e8fffb;overflow:hidden;ove
 .hints.on{opacity:.8}
 .hints svg{width:30px;height:30px;stroke:#e8fffb;fill:none;stroke-width:1.3;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 6px rgba(127,246,230,.6))}
 .fail{position:fixed;inset:0;display:grid;place-items:center;color:#9fb;font-size:14px;padding:24px;text-align:center}
-@media (prefers-reduced-motion: reduce){.hints{transition:none}}
+.note{position:fixed;left:0;right:0;bottom:calc(30px + env(safe-area-inset-bottom,0px));z-index:5;display:flex;flex-direction:column;align-items:center;gap:10px;pointer-events:none;opacity:0;transform:translateY(6px);transition:opacity 1.2s,transform 1.2s}
+.note.on{opacity:1;transform:none}
+.note svg{width:30px;height:30px;stroke:#e8fffb;fill:none;stroke-width:1.3;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 6px rgba(127,246,230,.6))}
+.note svg .ring{animation:tapring 1.6s ease-out infinite;transform-origin:16px 12px}
+.note svg .ring2{animation:tapring 1.6s .22s ease-out infinite;transform-origin:16px 12px}
+@keyframes tapring{0%{opacity:.9;transform:scale(.5)}70%{opacity:0;transform:scale(1.25)}100%{opacity:0}}
+.note span{font:500 11px/1.4 system-ui,sans-serif;letter-spacing:.22em;text-transform:uppercase;color:rgba(232,255,251,.78);text-shadow:0 0 12px rgba(0,0,0,.9)}
+@media (prefers-reduced-motion: reduce){.hints,.note{transition:none}.note svg .ring,.note svg .ring2{animation:none}}
 </style>
 <script type="importmap">
 { "imports": {
@@ -44,6 +51,10 @@ html,body{margin:0;height:100%;background:#000;color:#e8fffb;overflow:hidden;ove
   <svg viewBox="0 0 32 32"><path d="M8 16h16M8 16l3-3M8 16l3 3M24 16l-3-3M24 16l-3 3"/><circle cx="16" cy="16" r="2.2"/></svg>
   <!-- tap a memory -->
   <svg viewBox="0 0 32 32"><circle cx="16" cy="13" r="3"/><circle cx="16" cy="13" r="7.5" opacity=".55"/><path d="M16 21v6"/></svg>
+</div>
+<div class="note" id="note" role="status" aria-live="polite">
+  <svg viewBox="0 0 32 32" aria-hidden="true"><circle class="ring" cx="16" cy="12" r="6"/><circle class="ring2" cx="16" cy="12" r="6"/><circle cx="16" cy="12" r="2.2"/><path d="M16 17v9"/></svg>
+  <span id="noteText">Double tap for the next memory</span>
 </div>
 <noscript><div class="fail">This memory needs JavaScript.</div></noscript>
 
@@ -297,8 +308,8 @@ const CENTRE = LAYOUT.reduce((a, l) => a.add(new V3(...l.C)), new V3()).multiply
 const OVER = { pos: CENTRE.clone().add(new V3(0, 1.2, 22)), look: CENTRE.clone() };
 
 const pointVS = `
-  uniform vec3 uLo, uHi, uWaveC, uRipC, uBlob, uFluo;
-  uniform float uSmin, uSmax, uPx, uTime, uLevel, uDust, uWaveR, uWaveA, uRipR, uRipA, uBlobA, uFlat, uPlane, uCardK, uFocus, uAper, uGain, uKeep, uShed, uClear, uMode, uSizeK;
+  uniform vec3 uLo, uHi, uWaveC, uRipC, uBlob, uFluo, uSwC;
+  uniform float uSmin, uSmax, uPx, uTime, uLevel, uDust, uWaveR, uWaveA, uRipR, uRipA, uBlobA, uFlat, uPlane, uCardK, uSwirl, uSwirlT, uFocus, uAper, uGain, uKeep, uShed, uClear, uMode, uSizeK;
   attribute float aS, aW;
   varying vec3 vC; varying float vBok;
   float hsh(vec3 p){ p = fract(p * .3183099 + .1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
@@ -334,7 +345,20 @@ const pointVS = `
     float bl = uBlobA / (1.0 + bd * bd * 30.0);
     col += c * bl * .3 + uFluo * (rim * (.45 + .5 * h) + rip * .4 + bl * .03 * settle);
     col *= aW * lf * (1.0 + glint * (1.6 + bl * 2.5));                // soft edges, shed sparkles, glints that catch the light
-    vec4 mv = modelViewMatrix * vec4(q, 1.0);
+    vec4 wp = modelMatrix * vec4(q, 1.0);
+    if (uSwirl > .001){
+      // the points leave their photographs and join one slow galaxy
+      float sw = clamp(uSwirl * 1.7 - h2 * .7, 0.0, 1.0); sw = sw * sw * (3.0 - 2.0 * sw);
+      float r0 = 1.0 + pow(h, .75) * 15.0;
+      float halo = step(fract(h3 * 13.0), .18);
+      float armI = step(.5, fract(h3 * 7.0));
+      float th0 = mix(armI * 3.14159 + 2.3 * log(r0) + (fract(h3 * 31.0) - .5) * 1.0, h3 * 18.85, halo);
+      float th = th0 + .9 / pow(r0, .75) * uSwirlT;
+      vec3 disc = vec3(cos(th) * r0, (h2 - .5) * (2.2 - r0 * .1) * (1.0 + halo * 2.0) + sin(th * 3.0 + uSwirlT * .3) * .12, sin(th) * r0);
+      disc = vec3(disc.x, disc.y * .9 - disc.z * .44, disc.y * .44 + disc.z * .9);
+      wp.xyz = mix(wp.xyz, uSwC + disc, sw);
+    }
+    vec4 mv = viewMatrix * wp;
     float dist = -mv.z;
     float sz = exp(uSmin + aS * (uSmax - uSmin)) * mix(.55, 1.0, settle) * (1.0 + rim * .8) * mix(1.0, kf * uCardK, uFlat);
     float ps = sz * length(modelViewMatrix[0].xyz) * uPx / dist * uSizeK;    // glitter pass: smaller than the gaps; clear pass: fills them
@@ -360,7 +384,7 @@ const pointFS = `uniform float uMode; varying vec3 vC; varying float vBok;
   }`;
 
 const mems = [];
-const FOCUS_U = { value: 10 }, APER_U = { value: .03 };
+const FOCUS_U = { value: 10 }, APER_U = { value: .03 }, SWIRL_U = { value: 0 }, SWIRLT_U = { value: 0 };
 function makeMemory(meta, buf, i){
   const L = LAYOUT[i % LAYOUT.length];
   const n = meta.n;
@@ -382,7 +406,7 @@ function makeMemory(meta, buf, i){
     uPx: { value: 1 }, uTime: timeU, uLevel: { value: 0 }, uDust: { value: 0 }, uFluo: { value: FLUO_LIN },
     uWaveC: { value: focus.clone() }, uWaveR: { value: 0 }, uWaveA: { value: 0 },
     uRipC: { value: focus.clone() }, uRipR: { value: 0 }, uRipA: { value: 0 },
-    uBlob: { value: new V3(0, 0, 999) }, uBlobA: { value: 0 }, uFlat: { value: 0 }, uPlane: { value: -meta.focus[2] }, uCardK: { value: cardK },
+    uBlob: { value: new V3(0, 0, 999) }, uBlobA: { value: 0 }, uFlat: { value: 0 }, uPlane: { value: -meta.focus[2] }, uCardK: { value: cardK }, uSwirl: SWIRL_U, uSwirlT: SWIRLT_U, uSwC: { value: CENTRE },
     uFocus: FOCUS_U, uAper: APER_U, uGain: { value: 1.0 }, uKeep: { value: .14 }, uShed: { value: .07 }, uClear: { value: 0 }, uMode: { value: 0 }, uSizeK: { value: .78 }
   };
   const pts = new THREE.Points(g, new THREE.ShaderMaterial({ uniforms: U, vertexShader: pointVS, fragmentShader: pointFS, vertexColors: true,
@@ -533,7 +557,6 @@ function arrive(){
   else { m.ripT = now(); chime(NOTES[S.idx % NOTES.length] * 2, false); }
   m.levelFrom = m.U.uLevel.value; m.levelTo = 1; m.levelT = now(); setFlat(m, 0, 1.6);
   setClear(m, 1, REDUCE ? 1.5 : 3.2, m.waveT > 0 && now() - m.waveT < 1 ? 1.2 : .4);      // focus pulls from glitter to a sharp memory
-  if (!S.hinted){ S.hinted = true; setTimeout(() => $('hints').classList.add('on'), 2600); setTimeout(() => $('hints').classList.remove('on'), 9000); }
 }
 function startFinale(){
   const prev = mems[S.idx];
@@ -543,6 +566,40 @@ function startFinale(){
   S.blob0 = blob.position.clone();
   for (const m of mems) if (m){ m.levelFrom = m.U.uLevel.value; m.levelTo = m.revealed ? .9 : 0; m.levelT = now(); if (m.revealed) setFlat(m, .92, 4); setClear(m, 0, 2); }
   whoosh(4);
+}
+// the galaxy: every memory dissolves into one slow swirl
+const SWIRL = { from: 0, to: 0, t: 0, d: 1 };
+function setSwirl(to, d){ SWIRL.from = SWIRL_U.value; SWIRL.to = to; SWIRL.t = now(); SWIRL.d = d; }
+function swirlView(){
+  const D = clamp(14.5 / (Math.tan(THREE.MathUtils.degToRad(29)) * Math.min(camera.aspect, 1.15)), 22, 52);
+  return CENTRE.clone().add(new V3(0, D * .42, D * .9));
+}
+function startSwirl(){
+  const prev = mems[S.idx];
+  if (prev){ prev.levelFrom = prev.U.uLevel.value; prev.levelTo = .5; prev.levelT = now(); }
+  S.mode = 'swirl'; S.t0 = now(); S.idx = -1; S.queue = null;
+  S.camCurve = new THREE.CatmullRomCurve3([camera.position.clone(), camera.position.clone().lerp(swirlView(), .5).add(new V3(0, 3, 6)), swirlView()], false, 'centripetal');
+  S.look0 = look.clone(); S.blob0 = blob.position.clone();
+  for (const m of mems) if (m){ m.levelFrom = m.U.uLevel.value; m.levelTo = 1.35; m.levelT = now(); setFlat(m, 0, 3); setClear(m, 0, 1.6); m.pts.geometry.setDrawRange(0, m.n); }
+  setSwirl(1, REDUCE ? 4 : 11);
+  whoosh(7); chime(220, true);
+  ctl.yaw *= .2; ctl.pitch *= .2;
+}
+function endSwirl(){
+  S.mode = 'gather'; S.t0 = now(); S.gatherPos = camera.position.clone(); ctl.yaw = 0; ctl.pitch = 0;
+  for (const m of mems) if (m){ setFlat(m, .92, 4); m.levelFrom = m.U.uLevel.value; m.levelTo = .5; m.levelT = now(); }
+  setSwirl(0, REDUCE ? 3 : 6);
+  chime(330, true);
+}
+function doubleTap(){
+  if (!S.noted){ S.noted = true; }
+  $('note').classList.remove('on'); S.noteOn = false;
+  const n = mems.filter(Boolean).length;
+  if (S.mode === 'hold'){
+    if (S.idx + 1 < n) startTravel(S.idx + 1);
+    else if (n >= COUNT) startSwirl();
+  } else if (S.mode === 'intro'){ if (mems[0]) startTravel(0); }
+  else if (S.mode === 'swirl' && now() - S.t0 > 2.5){ endSwirl(); }
 }
 function goTo(i){
   if (i === S.idx && S.mode === 'hold'){ const m = mems[i]; m.ripT = now(); chime(NOTES[i % NOTES.length] * 1.5, false); return; }
@@ -573,13 +630,21 @@ stage.addEventListener('pointermove', (e) => {
 });
 const endPtr = (e) => {
   ptrs.delete(e.pointerId);
-  if (ptrs.size === 0 && downAt && moved < 12 && now() - downAt.t < .5) tap(e.clientX, e.clientY);
+  if (ptrs.size === 0 && downAt && moved < 12 && now() - downAt.t < .5) handleTap(e.clientX, e.clientY);
   if (ptrs.size === 0) downAt = null;
 };
 stage.addEventListener('pointerup', endPtr); stage.addEventListener('pointercancel', endPtr);
 stage.addEventListener('wheel', (e) => { e.preventDefault(); ctl.zoom = clamp(ctl.zoom * (1 + e.deltaY * .0012), .6, 1.35); ctl.lastInput = now(); }, { passive: false });
-addEventListener('keydown', (e) => { if (e.key === 'ArrowRight' || e.key === ' '){ const n = mems.filter(Boolean).length; if (n) goTo(((S.idx < 0 ? -1 : S.idx) + 1) % n); } });
+addEventListener('keydown', (e) => { if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'Enter'){ e.preventDefault(); doubleTap(); } });
 
+let lastTap = null, tapTimer = 0;
+function handleTap(x, y){
+  if (lastTap && now() - lastTap.t < .34 && Math.hypot(x - lastTap.x, y - lastTap.y) < 60){
+    clearTimeout(tapTimer); lastTap = null; doubleTap(); return;
+  }
+  lastTap = { x, y, t: now() };
+  tapTimer = setTimeout(() => { lastTap = null; if (S.mode !== 'swirl' && S.mode !== 'gather') tap(x, y); }, 340);
+}
 function tap(x, y){
   const v = new V3(); let best = -1, bd = 1e9;
   for (const m of mems){ if (!m) continue;
@@ -602,7 +667,7 @@ function frame(){
 
   // user look-around eases back when left alone
   const idle = t - ctl.lastInput > 2.5;
-  const LIM = S.mode === 'finale' || S.mode === 'intro' ? { y: 1.1, p: .45 } : { y: .32, p: .16 };
+  const LIM = S.mode === 'finale' || S.mode === 'intro' || S.mode === 'swirl' ? { y: 1.1, p: .45 } : { y: .32, p: .16 };
   ctl.yaw = clamp(ctl.yaw, -LIM.y, LIM.y); ctl.pitch = clamp(ctl.pitch, -LIM.p, LIM.p);
   if (idle){ ctl.yaw *= 1 - dt * .5; ctl.pitch *= 1 - dt * .5; ctl.zoom += (1 - ctl.zoom) * dt * .4; }
 
@@ -642,11 +707,22 @@ function frame(){
     offs.set(Math.sin(a) * .4, .55 + Math.sin(a * 2) * .08, .35 + Math.cos(a) * .12).multiplyScalar(amp * SCALE).applyQuaternion(m.grp.quaternion);
     blob.position.copy(m.C).add(offs);
     if (S.queue !== null && el > 1.2) startTravel(S.queue);
-    else if (el > dur){
-      const n = mems.filter(Boolean).length;
-      if (S.idx + 1 < n) startTravel(S.idx + 1);
-      else if (n >= COUNT) startFinale();
-      else S.t0 = t - dur + 1;               // wait for the next memory to finish loading
+    // stay with this memory until the viewer double-taps
+    if (S.idx === 0 && !S.noted && el > 3.6 && !S.noteOn){ S.noteOn = true; $('noteText').textContent = 'Double tap for the next memory'; $('note').classList.add('on'); }
+  } else if (S.mode === 'swirl' || S.mode === 'gather'){
+    // pull far back and watch every point drift into one slow galaxy
+    const k = clamp(el / 6, 0, 1);
+    if (S.mode === 'swirl'){
+      basePos.copy(S.camCurve.getPoint(easeIO(k)));
+      offs.subVectors(basePos, CENTRE).applyAxisAngle(Y, el * .025 * ease(seg(el, 3, 6)));
+      basePos.copy(CENTRE).add(offs);
+      look.copy(S.look0).lerp(CENTRE, ease(k));
+      fov += (58 - fov) * Math.min(1, dt * 1.2);
+      blob.position.copy(S.blob0).lerp(CENTRE, easeIO(seg(el, 0, 7)));
+      if (!S.noteOn && el > 9){ S.noteOn = true; $('noteText').textContent = 'Double tap to begin again'; $('note').classList.add('on'); }
+    } else {
+      basePos.copy(S.gatherPos); look.copy(CENTRE);
+      if (el > (REDUCE ? 2.5 : 4.8)){ S.cycle++; startTravel(0); }
     }
   } else if (S.mode === 'finale'){
     // pull back: every memory now glows in the box
@@ -663,6 +739,8 @@ function frame(){
     else if (el > FINALE){ S.cycle++; startTravel(0); }
   }
 
+  if (SWIRL.t){ SWIRL_U.value = SWIRL.from + (SWIRL.to - SWIRL.from) * easeIO(seg(t - SWIRL.t, 0, SWIRL.d)); }
+  if (SWIRL_U.value > .001) SWIRLT_U.value += dt * (REDUCE ? .25 : .55);          // slow motion
   // apply look-around and zoom around the look target
   offs.subVectors(basePos, look).multiplyScalar(S.mode === 'travel' ? 1 : ctl.zoom);
   qy.setFromAxisAngle(Y, ctl.yaw); tmp.crossVectors(Y, offs).normalize(); if (tmp.lengthSq() < .1) tmp.copy(X);
@@ -720,6 +798,7 @@ function frame(){
   const curClear = S.mode === 'hold' && mems[S.idx] ? mems[S.idx].U.uClear.value : 0;
   if (S.mode === 'hold'){ fTarget = camera.position.distanceTo(mems[S.idx].C); aTarget = .032 * (1 - curClear); }
   else if (S.mode === 'finale'){ fTarget = camera.position.distanceTo(OVER.look); aTarget = .005; }
+  else if (S.mode === 'swirl' || S.mode === 'gather'){ fTarget = camera.position.distanceTo(CENTRE); aTarget = .012; }
   else { fTarget = bdist; aTarget = .05; }
   FOCUS_U.value += (fTarget - FOCUS_U.value) * Math.min(1, dt * 2.5);
   APER_U.value += (aTarget - APER_U.value) * Math.min(1, dt * 1.5);
@@ -765,7 +844,7 @@ requestAnimationFrame(frame);
 addEventListener('visibilitychange', () => { if (actx){ document.hidden ? actx.suspend() : actx.resume(); } });
 window.__state = () => ({ cam: camera.position.toArray().map((v) => +v.toFixed(2)), fov: +camera.fov.toFixed(1), blob: blob.position.toArray().map((v) => +v.toFixed(2)), mode: S.mode, idx: S.idx, loaded: mems.filter(Boolean).length, revealed: mems.filter((m) => m && m.revealed).length });
 window.__goTo = goTo;
-window.__dbg = { mems, startFinale: () => { for (const m of mems) if (m){ m.revealed = true; m.waveT = .001; m.frac = 1; m.pts.geometry.setDrawRange(0, m.n); } startFinale(); } };
+window.__dbg = { doubleTap, startSwirl,  mems, startFinale: () => { for (const m of mems) if (m){ m.revealed = true; m.waveT = .001; m.frac = 1; m.pts.geometry.setDrawRange(0, m.n); } startFinale(); } };
 </script>
 </body>
 </html>
