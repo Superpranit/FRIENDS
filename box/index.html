@@ -126,10 +126,8 @@ const grade = new ShaderPass({
         vec2 dd = (uv - uBlob) / 14.0; vec2 s = uv + off; vec3 acc = vec3(0.0); float wt = 1.0;
         for (int i = 0; i < 14; i++){ s -= dd; acc += max(texture2D(tDiffuse, s).rgb - .75, 0.0) * wt; wt *= .84; }
         col += acc * .02 * uBlobV * exp(-length((uv - uBlob) * asp) * 2.6);
-        // the lens catches the orb: a thin anamorphic streak, a faint star, prism ghosts
+        // the lens catches the light: faint prism ghosts
         vec2 bp = (uv - uBlob) * asp;
-        col += vec3(.22, .72, 1.0) * exp(-abs(bp.y) * 420.0 / (.5 + uBlobS)) * exp(-abs(bp.x) * 3.2) * .22 * uBlobV;
-        col += vec3(.6, 1.0, .95) * (exp(-abs(bp.x) * 1400.0) * exp(-abs(bp.y) * 30.0) * .08) * uBlobV;
         vec2 axis = vec2(.5) - uBlob;
         for (int k = 0; k < 3; k++){
           float fk = float(k); vec2 gp = uBlob + axis * (1.35 + fk * .5); float rk = .028 + fk * .024;
