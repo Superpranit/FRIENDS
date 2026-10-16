@@ -284,11 +284,12 @@ const history = [];
 /* ===================== memories ===================== */
 // where each memory floats in the void (its people sit at C), and how it is turned
 const LAYOUT = [
-  { C: [3.8, 7.6, -4.5], yaw: -.3, pitch: .02, roll: -.03 },    // the June trip, the oldest memory (highest)
-  { C: [-3.6, 3.9, -8.5], yaw: .36, pitch: .03, roll: .04 },     // mountain viewpoint, day
-  { C: [3.9, .2, -12.5], yaw: -.42, pitch: -.04, roll: -.05 },   // misty hilltop
-  { C: [-3.4, -3.5, -16.5], yaw: .28, pitch: .05, roll: .05 },   // party under the lights, night
-  { C: [3.6, -7.2, -20.5], yaw: -.46, pitch: -.02, roll: -.04 }  // the street, late (deepest)
+  { C: [-3.8, 8.5, -1.5], yaw: .3, pitch: .02, roll: .03 },     // the big group, March 2025, the oldest memory (highest)
+  { C: [3.8, 5.1, -5.5], yaw: -.3, pitch: .02, roll: -.03 },     // the June trip
+  { C: [-3.6, 1.7, -9.5], yaw: .36, pitch: .03, roll: .04 },     // mountain viewpoint, day
+  { C: [3.9, -1.7, -13.5], yaw: -.42, pitch: -.04, roll: -.05 }, // misty hilltop
+  { C: [-3.4, -5.1, -17.5], yaw: .28, pitch: .05, roll: .05 },   // party under the lights, night
+  { C: [3.6, -8.5, -21.5], yaw: -.46, pitch: -.02, roll: -.04 }  // the street, late (deepest)
 ];
 const SCALE = 1.9;                                               // each memory is a little larger than life
 const CENTRE = LAYOUT.reduce((a, l) => a.add(new V3(...l.C)), new V3()).multiplyScalar(1 / LAYOUT.length);
@@ -297,7 +298,7 @@ const OVER = { pos: CENTRE.clone().add(new V3(0, 1.2, 22)), look: CENTRE.clone()
 
 const pointVS = `
   uniform vec3 uLo, uHi, uWaveC, uRipC, uBlob, uFluo;
-  uniform float uSmin, uSmax, uPx, uTime, uLevel, uDust, uWaveR, uWaveA, uRipR, uRipA, uBlobA, uFlat, uPlane, uFocus, uAper, uGain, uKeep, uShed, uClear, uMode, uSizeK;
+  uniform float uSmin, uSmax, uPx, uTime, uLevel, uDust, uWaveR, uWaveA, uRipR, uRipA, uBlobA, uFlat, uPlane, uCardK, uFocus, uAper, uGain, uKeep, uShed, uClear, uMode, uSizeK;
   attribute float aS, aW;
   varying vec3 vC; varying float vBok;
   float hsh(vec3 p){ p = fract(p * .3183099 + .1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
@@ -313,7 +314,7 @@ const pointVS = `
     float settle = passed * passed * (3.0 - 2.0 * passed);
     // resting memories fold into a glowing photograph (projected along the original camera's rays)
     float kf = uPlane / max(-p.z, .3);
-    vec3 card = vec3(p.xy * kf * 1.55, -uPlane + (p.z + uPlane) * .04);
+    vec3 card = vec3(p.xy * kf * uCardK, -uPlane + (p.z + uPlane) * .04);
     vec3 pr = mix(p, card, uFlat);
     vec3 q = pr + scat * (1.0 - settle);
     // the memory is always shedding a few glittering particles into the dark
@@ -335,7 +336,7 @@ const pointVS = `
     col *= aW * lf * (1.0 + glint * (1.6 + bl * 2.5));                // soft edges, shed sparkles, glints that catch the light
     vec4 mv = modelViewMatrix * vec4(q, 1.0);
     float dist = -mv.z;
-    float sz = exp(uSmin + aS * (uSmax - uSmin)) * mix(.55, 1.0, settle) * (1.0 + rim * .8) * mix(1.0, kf * 1.55, uFlat);
+    float sz = exp(uSmin + aS * (uSmax - uSmin)) * mix(.55, 1.0, settle) * (1.0 + rim * .8) * mix(1.0, kf * uCardK, uFlat);
     float ps = sz * length(modelViewMatrix[0].xyz) * uPx / dist * uSizeK;    // glitter pass: smaller than the gaps; clear pass: fills them
     // depth of field: out-of-focus particles open into soft bokeh discs
     float coc = abs(dist - uFocus) / dist * uAper * uPx;
@@ -371,6 +372,9 @@ function makeMemory(meta, buf, i){
   g.setAttribute('aS', new THREE.InterleavedBufferAttribute(ib8, 1, 9, true));
   g.setAttribute('aW', new THREE.InterleavedBufferAttribute(ib8, 1, 10, true));
   const focus = new V3(...meta.focus);
+  // every resting photo card gets the same area, whatever lens the photo was taken with
+  const plane0 = -meta.focus[2], cw = 2 * plane0 * (meta.W / 2 / meta.f), ch = 2 * plane0 * (meta.H / 2 / meta.f);
+  const cardK = Math.sqrt(1.8 * 1.35 / (cw * ch));
   const lo = new V3(...meta.lo), hi = new V3(...meta.hi);
   let R = 0; for (const x of [lo.x, hi.x]) for (const y of [lo.y, hi.y]) for (const z of [lo.z, hi.z]) R = Math.max(R, focus.distanceTo(new V3(x, y, z)));
   const U = {
@@ -378,7 +382,7 @@ function makeMemory(meta, buf, i){
     uPx: { value: 1 }, uTime: timeU, uLevel: { value: 0 }, uDust: { value: 0 }, uFluo: { value: FLUO_LIN },
     uWaveC: { value: focus.clone() }, uWaveR: { value: 0 }, uWaveA: { value: 0 },
     uRipC: { value: focus.clone() }, uRipR: { value: 0 }, uRipA: { value: 0 },
-    uBlob: { value: new V3(0, 0, 999) }, uBlobA: { value: 0 }, uFlat: { value: 0 }, uPlane: { value: -meta.focus[2] },
+    uBlob: { value: new V3(0, 0, 999) }, uBlobA: { value: 0 }, uFlat: { value: 0 }, uPlane: { value: -meta.focus[2] }, uCardK: { value: cardK },
     uFocus: FOCUS_U, uAper: APER_U, uGain: { value: 1.0 }, uKeep: { value: .14 }, uShed: { value: .07 }, uClear: { value: 0 }, uMode: { value: 0 }, uSizeK: { value: .78 }
   };
   const pts = new THREE.Points(g, new THREE.ShaderMaterial({ uniforms: U, vertexShader: pointVS, fragmentShader: pointFS, vertexColors: true,
@@ -398,7 +402,7 @@ function makeMemory(meta, buf, i){
   const hfov = 2 * Math.atan(meta.W / 2 / meta.f), vfov = 2 * Math.atan(meta.H / 2 / meta.f);
   // the corners of the resting photo card, in the world (the soft edge trims about 15%)
   const plane = -meta.focus[2], corners = [[.08, .08], [.92, .08], [.08, .92], [.92, .92]].map(([u, v]) =>
-    pts.localToWorld(new V3((u * meta.W - meta.cx) / meta.f * plane * 1.55, -(v * meta.H - meta.cy) / meta.f * plane * 1.55, -plane)));
+    pts.localToWorld(new V3((u * meta.W - meta.cx) / meta.f * plane * cardK, -(v * meta.H - meta.cy) / meta.f * plane * cardK, -plane)));
   const m = { i, meta, grp, pts, clear, U, C, view, R, hfov, vfov, n, corners, clearFrom: 0, clearTo: 0, clearT: 0, clearD: 1, revealed: false, level: 0, levelT: 0, waveT: -1, ripT: -1, frac: .4, born: now(), flatFrom: 0, flatTo: 0, flatT: 0, flatD: 1 };
   g.setDrawRange(0, Math.floor(n * m.frac));
   mems[i] = m;
@@ -469,7 +473,7 @@ function chime(f0, big){
 $('snd').addEventListener('click', (e) => { e.stopPropagation(); if (!actx){ audioStart(); return; } setSound(!soundOn); });
 
 /* ===================== the journey ===================== */
-const NOTES = [493.88, 523.25, 587.33, 659.25, 783.99];
+const NOTES = [440.0, 493.88, 523.25, 587.33, 659.25, 783.99];
 const INTRO = REDUCE ? 2 : 4.6, HOLD = REDUCE ? 7 : 10, REVISIT = REDUCE ? 5 : 7.5, FINALE = REDUCE ? 8 : 15, WAVE = REDUCE ? 2.2 : 3.6;
 const S = { mode: 'intro', t0: now(), idx: -1, queue: null, cycle: 0 };
 const look = OVER.look.clone();
