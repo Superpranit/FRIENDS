@@ -1,7 +1,8 @@
 import sys, json, numpy as np, cv2
 sys.path.insert(0,'src'); from readply import read
 U='/mnt/user-data/uploads/'
-MEMS=[('trip',     U+'IMG-20250607-WA0377_3d.ply'),
+MEMS=[('group',    U+'IMG-20250328-WA0016_3d.ply'),
+      ('trip',     U+'IMG-20250607-WA0377_3d.ply'),
       ('mountain',U+'WhatsApp_Image_2026-10-15_at_6_47_41_PM_3d.ply'),
       ('hilltop', U+'WhatsApp_Image_2026-10-14_at_11_23_16_AM_3d.ply'),
       ('party',   U+'WhatsApp_Image_2026-10-15_at_6_50_41_PM_3d.ply'),
