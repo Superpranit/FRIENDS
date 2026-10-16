@@ -8,7 +8,7 @@ Scan the poster with any phone camera. The page opens, the camera starts by itse
 
 Live: https://superpranit.github.io/FRIENDS/box/
 
-Four memories (mountain viewpoint, misty hilltop, party under the lights, the street at night) float as dust in a dark void. A fluorescent light is born in the middle, flies to each one in turn, and the memory assembles in 3D as the light reaches it, then settles into a glowing photo card. At the end the camera pulls back to show all of them together, and the journey loops. Drag to look around, pinch or scroll to zoom, tap a memory to send the light there. Sound starts on the first touch.
+Five memories (the June trip, mountain viewpoint, misty hilltop, party under the lights, the street at night) float as dust in a dark void. A fluorescent light is born in the middle, flies to each one in turn, and the memory assembles in 3D as the light reaches it, then settles into a glowing photo card. At the end the camera pulls back to show all of them together, and the journey loops. Drag to look around, pinch or scroll to zoom, tap a memory to send the light there. Sound starts on the first touch.
 
 `tools/box/convert.py` turns the SHARP splat `.ply` files into the light point clouds in `box/` (about 160k points each).
 
