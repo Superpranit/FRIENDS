@@ -87,20 +87,61 @@ const FLUO_LIN = new THREE.Vector3(FLUO.r, FLUO.g, FLUO.b);
 
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), .55, .45, .82);
+const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), .42, .5, .86);
 composer.addPass(bloom);
 const grade = new ShaderPass({
-  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uRes: { value: new THREE.Vector2(1, 1) } },
+  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uRes: { value: new THREE.Vector2(1, 1) }, uAspect: { value: 1 },
+    uBlob: { value: new THREE.Vector2(.5, .5) }, uBlobV: { value: 0 }, uBlobS: { value: .5 }, uGlass: { value: 1 } },
   vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-  fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime; uniform vec2 uRes; varying vec2 vUv;
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime, uAspect, uBlobV, uBlobS, uGlass; uniform vec2 uRes, uBlob; varying vec2 vUv;
+    float hh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(hh(i), hh(i + vec2(1.0, 0.0)), f.x), mix(hh(i + vec2(0.0, 1.0)), hh(i + vec2(1.0, 1.0)), f.x), f.y); }
+    float fb(vec2 p){ float s = 0.0, a = .5; for (int i = 0; i < 3; i++){ s += a * vn(p); p = p * 2.07 + vec2(1.7, 9.2); a *= .5; } return s; }
+    vec3 spectrum(float x){ return clamp(vec3(abs(x * 6.0 - 3.0) - 1.0, 2.0 - abs(x * 6.0 - 2.0), 2.0 - abs(x * 6.0 - 4.0)), 0.0, 1.0); }
     void main(){
-      vec2 d = vUv - .5; float r = dot(d, d);
-      vec3 c = vec3(texture2D(tDiffuse, vUv - d * r * .02).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv + d * r * .02).b);
-      c *= 1.0 - r * 1.1;                                     // vignette
+      vec2 uv = vUv, asp = vec2(uAspect, 1.0);
+      float t = uTime * .04;
+      // a sheet of slowly flowing liquid glass in front of everything
+      vec2 q = uv * asp * 1.35;
+      float w1 = fb(q + vec2(t, -t * .6));
+      float w2 = fb(q * 1.25 + vec2(-t * .7, t * .8) + w1 * 2.2);
+      vec2 g = vec2(dFdx(w2), dFdy(w2)) * uRes.y;
+      vec2 off = ((vec2(w1, w2) - .5) * .012 + g * .0008) * uGlass;
+      float ridge = smoothstep(.035, .0, abs(w2 - .55));
+      float disp = (.0015 + ridge * .007) * uGlass;
+      vec2 dir = normalize(g + vec2(1e-4, 0.0));
+      vec3 col = vec3(texture2D(tDiffuse, uv + off + dir * disp).r, texture2D(tDiffuse, uv + off).g, texture2D(tDiffuse, uv + off - dir * disp).b);
+      // rainbow light caught in the glass edges, strongest near the light
+      float near = exp(-length((uv - uBlob) * asp) * 2.4) * uBlobV;
+      float lum = dot(col, vec3(.3, .5, .2));
+      col += spectrum(fract(w1 * 1.7 + uv.x * .4 + t)) * ridge * (lum * .35 + .012 * near) * uGlass;
+      col *= 1.0 + (w2 - .5) * .12 * uGlass;            // the glass is thicker in places
+      // soft light leaks, like light trapped inside a crystal
+      vec2 l1 = vec2(.84 + .08 * sin(t * 2.3), .16 + .07 * cos(t * 1.7)), l2 = vec2(.12 + .06 * cos(t * 1.9), .86 + .05 * sin(t * 2.1));
+      col += vec3(.03, .17, .2) * pow(max(0.0, 1.0 - length((uv - l1) * asp) * 1.8), 4.0) * .12 * uGlass;
+      col += vec3(.06, .08, .2) * pow(max(0.0, 1.0 - length((uv - l2) * asp) * 2.0), 4.0) * .08 * uGlass;
+      if (uBlobV > .01){
+        // shafts of light pouring from the orb through the particles
+        vec2 dd = (uv - uBlob) / 14.0; vec2 s = uv + off; vec3 acc = vec3(0.0); float wt = 1.0;
+        for (int i = 0; i < 14; i++){ s -= dd; acc += max(texture2D(tDiffuse, s).rgb - .75, 0.0) * wt; wt *= .84; }
+        col += acc * .02 * uBlobV * exp(-length((uv - uBlob) * asp) * 2.6);
+        // the lens catches the orb: a thin anamorphic streak, a faint star, prism ghosts
+        vec2 bp = (uv - uBlob) * asp;
+        col += vec3(.22, .72, 1.0) * exp(-abs(bp.y) * 420.0 / (.5 + uBlobS)) * exp(-abs(bp.x) * 3.2) * .22 * uBlobV;
+        col += vec3(.6, 1.0, .95) * (exp(-abs(bp.x) * 1400.0) * exp(-abs(bp.y) * 30.0) * .08) * uBlobV;
+        vec2 axis = vec2(.5) - uBlob;
+        for (int k = 0; k < 3; k++){
+          float fk = float(k); vec2 gp = uBlob + axis * (1.35 + fk * .5); float rk = .028 + fk * .024;
+          float dg = length((uv - gp) * asp);
+          col += spectrum(.35 + fk * .22) * smoothstep(rk, rk * .7, dg) * (.45 + .55 * smoothstep(rk * .5, rk, dg)) * .012 * uBlobV;
+        }
+      }
+      vec2 d = uv - .5; float r = dot(d, d);
+      col *= 1.0 - r * 1.15;                                  // vignette
       vec2 px = floor(vUv * uRes) + floor(fract(uTime * 7.13) * 64.0) * vec2(5.588, 3.17);
-      float g = fract(52.9829189 * fract(dot(px, vec2(.06711056, .00583715))));   // stable at any resolution
-      c += (g - .5) * .018;                                   // fine film grain
-      gl_FragColor = vec4(max(c, 0.0), 1.0);
+      col += (fract(52.9829189 * fract(dot(px, vec2(.06711056, .00583715)))) - .5) * .016;   // film grain
+      gl_FragColor = vec4(max(col, 0.0), 1.0);
     }`
 });
 composer.addPass(grade);
@@ -110,7 +151,7 @@ function resize(){
   const w = innerWidth, h = innerHeight;
   renderer.setSize(w, h, false); composer.setSize(w, h);
   bloom.resolution.set(w * DPR / 2, h * DPR / 2);
-  grade.uniforms.uRes.value.set(w * DPR, h * DPR);
+  grade.uniforms.uRes.value.set(w * DPR, h * DPR); grade.uniforms.uAspect.value = w / h;
   camera.aspect = w / h; camera.updateProjectionMatrix();
 }
 addEventListener('resize', resize); resize();
@@ -168,30 +209,50 @@ const GLOW = glowTex();
 const sprite = (color, s, o) => { const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW, color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: o }));
   m.scale.setScalar(s); m.userData.s = s; m.userData.o = o; return m; };
 const blob = new THREE.Group(); scene.add(blob);
-const halo = sprite(new THREE.Color(0x3fe8d6), .62, .3);
-const mid = sprite(new THREE.Color(0x8ffff0), .2, .85);
-const core = sprite(new THREE.Color(0xffffff), .07, 1);
-blob.add(halo, mid, core);
-// sparks circling the light
-const SPARKS = 46;
-const sparkGeo = new THREE.BufferGeometry(); sparkGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(SPARKS * 3), 3));
-const sparkSeed = Array.from({ length: SPARKS }, () => [Math.random() * 6.28, .5 + Math.random() * 1.6, (Math.random() - .5) * 2, .06 + Math.random() * .2]);
+// the light: a hot white core inside slowly boiling fluorescent plasma, with soft rays
+const orbU = { uTime: timeU, uI: { value: 0 }, uFluo: { value: FLUO_LIN } };
+const orb = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMaterial({
+  uniforms: orbU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; vec4 mv = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+    mv.xy += position.xy * length(modelViewMatrix[0].xyz); gl_Position = projectionMatrix * mv; }`,
+  fragmentShader: `uniform float uTime, uI; uniform vec3 uFluo; varying vec2 vUv; ${NOISE}
+    void main(){
+      vec2 p = vUv * 2.0 - 1.0; float r = length(p), a = atan(p.y, p.x);
+      float core = exp(-r * r * 300.0) * 2.4 + exp(-r * r * 60.0) * .6;
+      float glow = .007 / (r * r + .02) * smoothstep(1.0, .2, r);
+      float pl = fbm(vec3(p * 4.2, uTime * .8));
+      float plasma = smoothstep(.4, .0, r) * (.3 + pl * 1.2);
+      float sw = fbm(vec3(cos(a) * 1.6 + 3.0, sin(a) * 1.6, uTime * .22 - r * 2.0));
+      float rays = pow(abs(sin(a * 6.0 + sw * 5.0)), 34.0) * smoothstep(1.0, .08, r) * smoothstep(.0, .1, r);
+      float rays2 = pow(abs(sin(a * 11.0 - sw * 3.0 + uTime * .1)), 60.0) * smoothstep(.7, .05, r);
+      vec3 c = vec3(1.0, 1.0, .98) * core + uFluo * glow * .85 + mix(uFluo, vec3(.8, 1.0, 1.0), pl) * plasma * .8 + mix(uFluo, vec3(1.0), .35) * (rays * .3 + rays2 * .18);
+      gl_FragColor = vec4(c * smoothstep(1.0, .5, r) * uI, 1.0);
+    }`
+}));
+orb.scale.setScalar(.95); orb.frustumCulled = false; blob.add(orb);
 const pointMat = (sizeK, color) => new THREE.ShaderMaterial({
   uniforms: { uPx: { value: 1 }, uK: { value: sizeK }, uCol: { value: color } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   vertexShader: `attribute float a; uniform float uPx, uK; varying float vA;
     void main(){ vA = a; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = clamp(uPx * uK * (.3 + a) / -mv.z, 0.0, 40.0); gl_Position = projectionMatrix * mv; }`,
   fragmentShader: `uniform vec3 uCol; varying float vA; void main(){ vec2 c = gl_PointCoord - .5; float d = dot(c, c); if (d > .25) discard;
-    gl_FragColor = vec4(uCol * smoothstep(.25, .0, d) * vA, 1.0); }`
+    gl_FragColor = vec4(uCol * exp(-d * 14.0) * vA, 1.0); }`
 });
-sparkGeo.setAttribute('a', new THREE.BufferAttribute(new Float32Array(SPARKS).fill(.8), 1));
-const sparks = new THREE.Points(sparkGeo, pointMat(.008, new THREE.Vector3(.7, 1.3, 1.2)));
-sparks.frustumCulled = false; scene.add(sparks);
+// embers the light sheds as it moves: they drift, float and wink out
+const EMB = 180;
+const embGeo = new THREE.BufferGeometry();
+embGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(EMB * 3), 3));
+embGeo.setAttribute('a', new THREE.BufferAttribute(new Float32Array(EMB), 1));
+const embers = new THREE.Points(embGeo, pointMat(.016, new THREE.Vector3(.8, 1.35, 1.25)));
+embers.frustumCulled = false; scene.add(embers);
+const EP = Array.from({ length: EMB }, () => ({ p: new V3(0, 0, 999), v: new V3(), life: 9, max: 1, s: Math.random() }));
+let embAcc = 0, embNext = 0;
+const blobPrev = new V3(), blobVel = new V3();
 // a comet trail behind the light
 const TRAIL = 260;
 const trailGeo = new THREE.BufferGeometry();
 trailGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL * 3), 3));
 trailGeo.setAttribute('a', new THREE.BufferAttribute(new Float32Array(TRAIL), 1));
-const trail = new THREE.Points(trailGeo, pointMat(.022, new THREE.Vector3(.35, 1.0, .9)));
+const trail = new THREE.Points(trailGeo, pointMat(.007, new THREE.Vector3(.3, .95, .9)));
 trail.frustumCulled = false; scene.add(trail);
 const history = [];
 
@@ -210,9 +271,9 @@ const OVER = { pos: CENTRE.clone().add(new V3(0, 1.2, 22)), look: CENTRE.clone()
 
 const pointVS = `
   uniform vec3 uLo, uHi, uWaveC, uRipC, uBlob, uFluo;
-  uniform float uSmin, uSmax, uPx, uTime, uLevel, uDust, uWaveR, uWaveA, uRipR, uRipA, uBlobA, uFlat, uPlane;
+  uniform float uSmin, uSmax, uPx, uTime, uLevel, uDust, uWaveR, uWaveA, uRipR, uRipA, uBlobA, uFlat, uPlane, uFocus, uAper, uGain, uKeep, uShed;
   attribute float aS, aW;
-  varying vec3 vC;
+  varying vec3 vC; varying float vBok;
   float hsh(vec3 p){ p = fract(p * .3183099 + .1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
   void main(){
     vec3 p = uLo + position * (uHi - uLo);
@@ -229,6 +290,13 @@ const pointVS = `
     vec3 card = vec3(p.xy * kf * 1.55, -uPlane + (p.z + uPlane) * .04);
     vec3 pr = mix(p, card, uFlat);
     vec3 q = pr + scat * (1.0 - settle);
+    // the memory is always shedding a few glittering particles into the dark
+    float loose = step(1.0 - uShed, h3) * settle;
+    float life = fract(uTime * (.045 + .07 * h) + h2 * 7.0);
+    vec3 flow = vec3(sin(p.y * 2.1 + uTime * .5 + h * 6.0), cos(p.x * 1.7 - uTime * .4 + h2 * 6.0), sin(p.x * 1.3 + p.y * 1.1 + uTime * .3));
+    q += loose * (vec3(.9, .4, .2) * life * life * 1.9 + flow * life * .4);
+    float lf = mix(1.0, (1.0 - life) * smoothstep(0.0, .1, life) * 1.7, loose);
+    float glint = pow(.5 + .5 * sin(uTime * (1.3 + h2 * 4.0) + h * 70.0), 48.0) * step(.6, h3);
     vec3 c = pow(color, vec3(2.2));
     float lum = dot(c, vec3(.2126, .7152, .0722));
     vec3 dim = (vec3(lum) * .7 + c * .3) * vec3(.45, .75, 1.0) * uDust * (.6 + .4 * sin(uTime * .8 + h * 30.0));
@@ -236,21 +304,35 @@ const pointVS = `
     float rim = exp(-pow((d - uWaveR) / .22, 2.0)) * uWaveA;          // the bright front of the light
     float rip = exp(-pow((d - uRipR) / .2, 2.0)) * uRipA;
     float bd = distance(q, uBlob);
-    float bl = uBlobA / (1.0 + bd * bd * 16.0);
-    col += c * bl * .55 + uFluo * (rim * (.45 + .5 * h) + rip * .4 + bl * .05 * settle);
-    col *= aW;                                                         // soft, ragged edges of the memory
-    vC = col;
+    float bl = uBlobA / (1.0 + bd * bd * 30.0);
+    col += c * bl * .3 + uFluo * (rim * (.45 + .5 * h) + rip * .4 + bl * .03 * settle);
+    col *= aW * lf * (1.0 + glint * (1.6 + bl * 2.5));                // soft edges, shed sparkles, glints that catch the light
     vec4 mv = modelViewMatrix * vec4(q, 1.0);
+    float dist = -mv.z;
     float sz = exp(uSmin + aS * (uSmax - uSmin)) * mix(.55, 1.0, settle) * (1.0 + rim * .8) * mix(1.0, kf * 1.55, uFlat);
-    float ps = sz * length(modelViewMatrix[0].xyz) * uPx / -mv.z;
-    vC *= clamp(ps / 1.2, .5, 1.0);                                   // far away: fainter, never sparkly
-    gl_PointSize = clamp(max(ps, 1.6), 0.0, 30.0);
+    float ps = sz * length(modelViewMatrix[0].xyz) * uPx / dist * .78;       // a little smaller than the gaps: glitter, not paint
+    // depth of field: out-of-focus particles open into soft bokeh discs
+    float coc = abs(dist - uFocus) / dist * uAper * uPx;
+    float diam = max(max(ps, coc), 1.5);
+    float bok = smoothstep(ps * 1.6, ps * 3.2, coc);
+    float keep = step(h, uKeep);
+    vBok = bok;
+    if (bok > .5 && keep < .5){ vC = vec3(0.0); gl_PointSize = 0.0; gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }   // only a few become big discs (fast on phones)
+    float energy = ps * ps / (diam * diam) * mix(1.0, 1.0 / uKeep, bok);
+    vC = col * uGain * clamp(energy, 0.0, 1.8);
+    gl_PointSize = clamp(diam, 0.0, 70.0);
     gl_Position = projectionMatrix * mv;
   }`;
-const pointFS = `varying vec3 vC;
-  void main(){ vec2 c = gl_PointCoord - .5; float d = dot(c, c); if (d > .25) discard; gl_FragColor = vec4(vC * (1.0 - d * .5), 1.0); }`;
+const pointFS = `varying vec3 vC; varying float vBok;
+  void main(){
+    float r = length(gl_PointCoord - .5) * 2.0; if (r > 1.0) discard;
+    float soft = exp(-r * r * 3.2) * 1.9;                                  // a tiny glowing particle
+    float disc = smoothstep(1.0, .84, r) * (.7 + .5 * smoothstep(.55, .95, r));   // a lens bokeh disc with a brighter rim
+    gl_FragColor = vec4(vC * mix(soft, disc, vBok), 1.0);
+  }`;
 
 const mems = [];
+const FOCUS_U = { value: 10 }, APER_U = { value: .03 };
 function makeMemory(meta, buf, i){
   const L = LAYOUT[i % LAYOUT.length];
   const n = meta.n;
@@ -269,9 +351,11 @@ function makeMemory(meta, buf, i){
     uPx: { value: 1 }, uTime: timeU, uLevel: { value: 0 }, uDust: { value: 0 }, uFluo: { value: FLUO_LIN },
     uWaveC: { value: focus.clone() }, uWaveR: { value: 0 }, uWaveA: { value: 0 },
     uRipC: { value: focus.clone() }, uRipR: { value: 0 }, uRipA: { value: 0 },
-    uBlob: { value: new V3(0, 0, 999) }, uBlobA: { value: 0 }, uFlat: { value: 0 }, uPlane: { value: -meta.focus[2] }
+    uBlob: { value: new V3(0, 0, 999) }, uBlobA: { value: 0 }, uFlat: { value: 0 }, uPlane: { value: -meta.focus[2] },
+    uFocus: FOCUS_U, uAper: APER_U, uGain: { value: 1.0 }, uKeep: { value: .14 }, uShed: { value: .07 }
   };
-  const pts = new THREE.Points(g, new THREE.ShaderMaterial({ uniforms: U, vertexShader: pointVS, fragmentShader: pointFS, vertexColors: true }));
+  const pts = new THREE.Points(g, new THREE.ShaderMaterial({ uniforms: U, vertexShader: pointVS, fragmentShader: pointFS, vertexColors: true,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
   pts.frustumCulled = false;
   pts.position.copy(focus).multiplyScalar(-1);          // the people sit at the group's centre
   const grp = new THREE.Group();
@@ -373,7 +457,7 @@ function overFov(){
     th = Math.max(th, Math.abs(d.dot(right)) / z); tv = Math.max(tv, Math.abs(d.dot(upv)) / z); }
   else for (const l of LAYOUT){ const d = new V3(...l.C).sub(OVER.pos), z = d.dot(fwd), r = 2.0 * SCALE;
     th = Math.max(th, (Math.abs(d.dot(right)) + r) / z); tv = Math.max(tv, (Math.abs(d.dot(upv)) + r * .75) / z); }
-  const vf = 2 * Math.atan(Math.max(tv, th / camera.aspect) * 1.12) * 1.1;
+  const vf = 2 * Math.atan(Math.max(tv, th / camera.aspect) * 1.2) * 1.12;
   return clamp(THREE.MathUtils.radToDeg(vf), 34, 82);
 }
 function memFov(m){
@@ -477,7 +561,7 @@ function frame(){
   timeU.value = t; grade.uniforms.uTime.value = t;
   const px = camera.projectionMatrix.elements[5] * renderer.domElement.height * .5;
   scene.userData.motes.material.uniforms.uPx.value = px;
-  sparks.material.uniforms.uPx.value = px; trail.material.uniforms.uPx.value = px;
+  trail.material.uniforms.uPx.value = px;
 
   // user look-around eases back when left alone
   const idle = t - ctl.lastInput > 2.5;
@@ -552,17 +636,41 @@ function frame(){
   if (Math.abs(camera.fov - fov) > .001){ camera.fov = fov; camera.updateProjectionMatrix(); }
 
   // the light itself
-  const pulse = 1 + Math.sin(t * 3.1) * .06 + Math.sin(t * 7.7) * .03;
   const born = S.mode === 'intro' ? easeOut(seg(el, .3, 2.5)) : 1;
-  halo.scale.setScalar(halo.userData.s * pulse * born); mid.scale.setScalar(mid.userData.s * pulse * born); core.scale.setScalar(core.userData.s * (1 + Math.sin(t * 11) * .05) * born);
-  halo.material.opacity = halo.userData.o * born; mid.material.opacity = mid.userData.o * born; core.material.opacity = born;
-  const sp = sparkGeo.attributes.position.array, sa = sparkGeo.attributes.a.array;
-  sparkSeed.forEach(([ph, sp0, tilt, r], i) => {
-    const a = ph + t * sp0;
-    sp[i * 3] = blob.position.x + Math.cos(a) * r; sp[i * 3 + 1] = blob.position.y + Math.sin(a * 1.3) * r * .5 + tilt * .05; sp[i * 3 + 2] = blob.position.z + Math.sin(a) * r;
-    sa[i] = born * (.4 + .6 * Math.abs(Math.sin(t * 2 + i)));
+  const flick = 1 + Math.sin(t * 3.1) * .05 + Math.sin(t * 7.7) * .03 + Math.sin(t * 17.3) * .02;
+  orb.scale.setScalar(.7 * flick * (.3 + .7 * born)); orbU.uI.value = born * flick;
+  blobVel.subVectors(blob.position, blobPrev).divideScalar(Math.max(dt, 1e-3)); blobPrev.copy(blob.position);
+  // embers
+  embAcc += dt * (18 + Math.min(60, blobVel.length() * 14)) * born;
+  while (embAcc >= 1){ embAcc -= 1; const e = EP[embNext]; embNext = (embNext + 1) % EMB;
+    e.p.copy(blob.position).add(new V3(Math.random() - .5, Math.random() - .5, Math.random() - .5).multiplyScalar(.12));
+    e.v.set(Math.random() - .5, Math.random() - .3, Math.random() - .5).multiplyScalar(.35).addScaledVector(blobVel, -.12);
+    e.life = 0; e.max = 1.4 + Math.random() * 2.4; }
+  const ep = embGeo.attributes.position.array, ea = embGeo.attributes.a.array;
+  EP.forEach((e, i) => {
+    e.life += dt; e.v.multiplyScalar(1 - dt * .9); e.v.y += dt * .05;
+    e.v.x += Math.sin(t * 1.3 + i) * dt * .05; e.v.z += Math.cos(t * 1.1 + i * .7) * dt * .05;
+    e.p.addScaledVector(e.v, dt);
+    ep[i * 3] = e.p.x; ep[i * 3 + 1] = e.p.y; ep[i * 3 + 2] = e.p.z;
+    const k = e.life / e.max;
+    ea[i] = k >= 1 ? 0 : born * (1 - k) * Math.min(1, e.life * 6) * (.55 + .45 * Math.sin(t * 9 + i * 3.7)) * (.5 + e.s);
   });
-  sparkGeo.attributes.position.needsUpdate = true; sparkGeo.attributes.a.needsUpdate = true;
+  embGeo.attributes.position.needsUpdate = true; embGeo.attributes.a.needsUpdate = true;
+  embers.material.uniforms.uPx.value = px;
+  // the lens sees the light
+  tmp.copy(blob.position).project(camera);
+  const onScr = tmp.z < 1 && Math.abs(tmp.x) < 1.25 && Math.abs(tmp.y) < 1.25;
+  grade.uniforms.uBlob.value.set(tmp.x * .5 + .5, tmp.y * .5 + .5);
+  const bdist = camera.position.distanceTo(blob.position);
+  grade.uniforms.uBlobV.value += ((onScr ? born * clamp(2.2 - Math.max(Math.abs(tmp.x), Math.abs(tmp.y)) * 1.4, 0, 1) : 0) - grade.uniforms.uBlobV.value) * Math.min(1, dt * 6);
+  grade.uniforms.uBlobS.value = clamp(4 / bdist, .1, 2);
+  // depth of field: focus follows the story
+  let fTarget, aTarget;
+  if (S.mode === 'hold'){ fTarget = camera.position.distanceTo(mems[S.idx].C); aTarget = .032; }
+  else if (S.mode === 'finale'){ fTarget = camera.position.distanceTo(OVER.look); aTarget = .005; }
+  else { fTarget = bdist; aTarget = .05; }
+  FOCUS_U.value += (fTarget - FOCUS_U.value) * Math.min(1, dt * 2.5);
+  APER_U.value += (aTarget - APER_U.value) * Math.min(1, dt * 1.5);
   history.unshift(blob.position.clone()); if (history.length > TRAIL) history.pop();
   const tp = trailGeo.attributes.position.array, ta = trailGeo.attributes.a.array;
   const flying = S.mode === 'travel' && S.blobCurve;
@@ -571,7 +679,7 @@ function frame(){
     const h = flying ? S.blobCurve.getPoint(Math.max(0, kb - i * .0011)) : history[Math.min(i >> 1, history.length - 1)];
     const sw = i * .0009;
     tp[i * 3] = h.x + Math.sin(i * .7 + t * 2.0) * sw; tp[i * 3 + 1] = h.y + Math.cos(i * .5 + t * 1.7) * sw - i * .0008; tp[i * 3 + 2] = h.z;
-    ta[i] = born * Math.pow(1 - i / TRAIL, 1.4) * (flying ? .7 : .35);
+    ta[i] = born * Math.pow(1 - i / TRAIL, 1.6) * (flying ? .55 : .2);
   }
   trailGeo.attributes.position.needsUpdate = true; trailGeo.attributes.a.needsUpdate = true;
 
@@ -579,7 +687,7 @@ function frame(){
   for (const m of mems){ if (!m) continue;
     const U = m.U;
     U.uPx.value = px;
-    U.uDust.value = .55 * easeOut(seg(t - m.born, 0, 3));
+    U.uDust.value = 1.5 * easeOut(seg(t - m.born, 0, 3));
     if (m.levelT){ U.uLevel.value = m.levelFrom + (m.levelTo - m.levelFrom) * ease(seg(t - m.levelT, 0, m.levelTo > m.levelFrom ? 2.6 : 3)); }
     if (m.waveT > 0){
       const w = (t - m.waveT) / WAVE;
