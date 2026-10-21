@@ -272,7 +272,7 @@ const bodyMat = new THREE.ShaderMaterial({
 // the light is now one soft, liquid blob: milky mint-white with a thin deep-blue rim, always wobbling
 const fluidU = { uTime: timeU, uI: { value: 0 }, uVel: { value: new THREE.Vector2() } };
 const fluid = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMaterial({
-  uniforms: fluidU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  uniforms: fluidU, transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending,
   vertexShader: `varying vec2 vUv; void main(){ vUv = uv; vec4 mv = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
     mv.xy += position.xy * length(modelViewMatrix[0].xyz); gl_Position = projectionMatrix * mv; }`,
   fragmentShader: `uniform float uTime, uI; uniform vec2 uVel; varying vec2 vUv; ${NOISE}
@@ -297,7 +297,7 @@ const fluid = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMate
       gl_FragColor = vec4(col * smoothstep(1.0, .78, r) * uI, 1.0);
     }`
 }));
-fluid.scale.setScalar(.85); fluid.frustumCulled = false; blob.add(fluid);
+fluid.scale.setScalar(.42); fluid.frustumCulled = false; fluid.renderOrder = 10; blob.add(fluid);
 let blobGrow = 1;
 sys.visible = false;                                   // the three-body dance is retired (kept in code, not drawn)
 const bodies = [0, 1, 2].map(() => { const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), bodyMat); m.scale.setScalar(.46); m.frustumCulled = false; sys.add(m); return m; });
@@ -379,6 +379,11 @@ const pointVS = `
     q += loose * (vec3(.9, .4, .2) * life * life * 1.9 + flow * life * .4);
     float lf = mix(1.0, (1.0 - life) * smoothstep(0.0, .1, life) * 1.7, loose);
     float glint = pow(.5 + .5 * sin(uTime * (1.3 + h2 * 4.0) + h * 70.0), 48.0) * step(.6, h3) * (1.0 - uMode);
+    // the blob parts the particles as it passes and leaves a shimmering wake
+    vec3 bv = q - uBlob; float bdd = length(bv); vec3 bn = bv / max(bdd, 1e-4);
+    float pushK = exp(-bdd * bdd * 36.0) * uBlobA * settle;
+    q += bn * pushK * .075 + normalize(cross(bn, vec3(0.0, 1.0, 0.0)) + 1e-5) * pushK * .045;
+    q += bn * sin(bdd * 36.0 - uTime * 5.0) * exp(-bdd * 6.5) * .007 * uBlobA * settle;
     vec3 c = pow(color, vec3(2.2));
     float lum = dot(c, vec3(.2126, .7152, .0722));
     vec3 dim = (vec3(lum) * .7 + c * .3) * vec3(.45, .75, 1.0) * uDust * (.6 + .4 * sin(uTime * .8 + h * 30.0));
@@ -386,8 +391,17 @@ const pointVS = `
     float rim = exp(-pow((d - uWaveR) / .22, 2.0)) * uWaveA;          // the bright front of the light
     float rip = exp(-pow((d - uRipR) / .2, 2.0)) * uRipA;
     float bd = distance(q, uBlob);
-    float bl = uBlobA / (1.0 + bd * bd * 30.0);
-    col += c * bl * .3 + uFluo * (rim * (.45 + .5 * h) + rip * .4 + bl * .03 * settle);
+    float bl = uBlobA / (1.0 + bd * bd * 9.0);
+    col += c * bl * .9 + uFluo * (rim * (.45 + .5 * h) + rip * .4 + bl * .05 * settle) + vec3(.55, 1.0, .85) * exp(-bd * bd * 110.0) * uBlobA * .45 * settle;
+    // a slow cinematic light sweeping across the memory
+    vec3 sdir = normalize(vec3(.85, .25, .45));
+    float sweep = exp(-pow((dot(p, sdir) - (mod(uTime * .3 + uPlane * 2.0, 7.0) - 3.5)) / .45, 2.0)) * settle;
+    col += c * sweep * .85 + vec3(1.0, .82, .6) * sweep * .045;
+    // fireflies: a few points glow and breathe
+    float ff = step(fract(h * 97.0 + h2 * 13.0), .012) * settle;
+    float ffp = .5 + .5 * sin(uTime * (.6 + h3 * 1.4) + h * 40.0);
+    col += (c * 1.4 + uFluo * .3) * ff * ffp * 2.4;
+    col *= .95 + .05 * sin(uTime * 1.3 + h * 50.0);
     col *= aW * lf * (1.0 + glint * (1.6 + bl * 2.5));                // soft edges, shed sparkles, glints that catch the light
     float swz = 0.0;
     vec4 wp = modelMatrix * vec4(q, 1.0);
@@ -412,7 +426,7 @@ const pointVS = `
     }
     vec4 mv = viewMatrix * wp;
     float dist = -mv.z;
-    float sz = exp(uSmin + aS * (uSmax - uSmin)) * mix(.55, 1.0, settle) * (1.0 + rim * .8) * mix(1.0, kf * uCardK, uFlat);
+    float sz = exp(uSmin + aS * (uSmax - uSmin)) * mix(.55, 1.0, settle) * (1.0 + rim * .8 + ff * ffp * 1.6) * mix(1.0, kf * uCardK, uFlat);
     float ps = sz * length(modelViewMatrix[0].xyz) * uPx / dist * uSizeK * (1.0 + swz * .35);
     if (swGone > .985){ vC = vec3(0.0); vBok = 0.0; gl_PointSize = 0.0; gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }    // glitter pass: smaller than the gaps; clear pass: fills them
     // depth of field: out-of-focus particles open into soft bokeh discs
@@ -684,7 +698,7 @@ stage.addEventListener('pointermove', (e) => {
 });
 const endPtr = (e) => {
   ptrs.delete(e.pointerId);
-  if (ptrs.size === 0 && downAt && moved < 12 && now() - downAt.t < .5) handleTap(e.clientX, e.clientY);
+  if (ptrs.size === 0 && downAt && moved < 12 && now() - downAt.t < .5) handleTap(e.clientX, e.clientY, e.timeStamp / 1000);
   if (ptrs.size === 0) downAt = null;
 };
 stage.addEventListener('pointerup', endPtr); stage.addEventListener('pointercancel', endPtr);
@@ -692,11 +706,11 @@ stage.addEventListener('wheel', (e) => { e.preventDefault(); ctl.zoom = clamp(ct
 addEventListener('keydown', (e) => { if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'Enter'){ e.preventDefault(); doubleTap(); } });
 
 let lastTap = null, tapTimer = 0;
-function handleTap(x, y){
-  if (lastTap && now() - lastTap.t < .34 && Math.hypot(x - lastTap.x, y - lastTap.y) < 60){
+function handleTap(x, y, ts = now()){
+  if (lastTap && ts - lastTap.t < .36 && Math.hypot(x - lastTap.x, y - lastTap.y) < 60){
     clearTimeout(tapTimer); lastTap = null; doubleTap(); return;
   }
-  lastTap = { x, y, t: now() };
+  lastTap = { x, y, t: ts };
   tapTimer = setTimeout(() => { lastTap = null; if (S.mode !== 'swirl' && S.mode !== 'gather') tap(x, y); }, 340);
 }
 function tap(x, y){
@@ -758,7 +772,8 @@ function frame(){
     fov += (memFov(m) - fov) * Math.min(1, dt * 2);
     // the light wanders among them
     const a = el * .5, amp = ease(seg(el, .4, 2.2));
-    offs.set(Math.sin(a) * .4, .55 + Math.sin(a * 2) * .08, .35 + Math.cos(a) * .12).multiplyScalar(amp * SCALE).applyQuaternion(m.grp.quaternion);
+    const span = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * Math.min(camera.aspect, 1) * m.view.distanceTo(m.C) * .55;   // stay inside the frame
+    offs.set(Math.sin(a) * span, (.18 + Math.sin(a * .7) * .2) * SCALE, (.1 + Math.cos(a) * .15) * SCALE).multiplyScalar(amp).applyQuaternion(m.grp.quaternion);   // weaves through the cloud
     blob.position.copy(m.C).add(offs);
     if (S.queue !== null && el > 1.2) startTravel(S.queue);
     // stay with this memory until the viewer double-taps
@@ -832,7 +847,7 @@ function frame(){
   }
   fluidU.uI.value = born * (1 + Math.sin(t * 4.1) * .025);
   blobGrow += ((S.mode === 'swirl' ? 1.5 : 1) - blobGrow) * Math.min(1, dt * .8);   // the galaxy's core
-  fluid.scale.setScalar(.85 * blobGrow);
+  fluid.scale.setScalar(.42 * blobGrow * clamp(camera.position.distanceTo(blob.position) / 5.5, .75, 2.4) * clamp(camera.fov / 40, .8, 1.5));   // same size on screen near or far
   // screen-space motion, so the drop stretches the way it travels
   tmp2.copy(blob.position).project(camera); tmp.copy(blobPrev).project(camera);
   fluidU.uVel.value.x += ((tmp2.x - tmp.x) / Math.max(dt, 1e-3) * .05 - fluidU.uVel.value.x) * Math.min(1, dt * 5);
