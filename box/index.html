@@ -13,7 +13,13 @@ html,body{margin:0;height:100%;background:#000;color:#e8fffb;overflow:hidden;ove
 #stage{position:fixed;inset:0;touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab}
 #stage:active{cursor:grabbing}
 #stage canvas{display:block;width:100% !important;height:100% !important}
-.top{position:fixed;right:0;top:0;z-index:5;padding:calc(14px + env(safe-area-inset-top,0px)) 16px 0}
+/* cinema: letterbox bars and an opening fade from black */
+.bar{position:fixed;left:0;right:0;height:var(--bar,7vh);background:#000;z-index:4;pointer-events:none;transition:transform 2.4s cubic-bezier(.2,.7,.2,1)}
+.bar.top{top:0;transform:translateY(-100%)}.bar.bot{bottom:0;transform:translateY(100%)}
+.cine .bar{transform:none}
+#fade{position:fixed;inset:0;background:#000;z-index:6;pointer-events:none;transition:opacity 3.2s ease}
+#fade.out{opacity:0}
+.top{position:fixed;right:0;top:0;z-index:8;padding:calc(var(--bar,7vh) + 10px + env(safe-area-inset-top,0px)) 16px 0}
 .icon-btn{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:rgba(0,0,0,.35);color:#e8fffb;cursor:pointer;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);opacity:.75;transition:opacity .3s}
 .icon-btn:hover{opacity:1}
 .icon-btn svg{width:18px;height:18px}
@@ -22,7 +28,7 @@ html,body{margin:0;height:100%;background:#000;color:#e8fffb;overflow:hidden;ove
 .hints.on{opacity:.8}
 .hints svg{width:30px;height:30px;stroke:#e8fffb;fill:none;stroke-width:1.3;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 6px rgba(127,246,230,.6))}
 .fail{position:fixed;inset:0;display:grid;place-items:center;color:#9fb;font-size:14px;padding:24px;text-align:center}
-.note{position:fixed;left:0;right:0;bottom:calc(30px + env(safe-area-inset-bottom,0px));z-index:5;display:flex;flex-direction:column;align-items:center;gap:10px;pointer-events:none;opacity:0;transform:translateY(6px);transition:opacity 1.2s,transform 1.2s}
+.note{position:fixed;left:0;right:0;bottom:calc(var(--bar,7vh) + 14px + env(safe-area-inset-bottom,0px));z-index:5;display:flex;flex-direction:column;align-items:center;gap:10px;pointer-events:none;opacity:0;transform:translateY(6px);transition:opacity 1.2s,transform 1.2s}
 .note.on{opacity:1;transform:none}
 .note svg{width:30px;height:30px;stroke:#e8fffb;fill:none;stroke-width:1.3;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 6px rgba(127,246,230,.6))}
 .note svg .ring{animation:tapring 1.6s ease-out infinite;transform-origin:16px 12px}
@@ -52,6 +58,7 @@ html,body{margin:0;height:100%;background:#000;color:#e8fffb;overflow:hidden;ove
   <!-- tap a memory -->
   <svg viewBox="0 0 32 32"><circle cx="16" cy="13" r="3"/><circle cx="16" cy="13" r="7.5" opacity=".55"/><path d="M16 21v6"/></svg>
 </div>
+<div class="bar top"></div><div class="bar bot"></div><div id="fade"></div>
 <div class="note" id="note" role="status" aria-live="polite">
   <svg viewBox="0 0 32 32" aria-hidden="true"><circle class="ring" cx="16" cy="12" r="6"/><circle class="ring2" cx="16" cy="12" r="6"/><circle cx="16" cy="12" r="2.2"/><path d="M16 17v9"/></svg>
   <span id="noteText">Double tap for the next memory</span>
@@ -146,6 +153,12 @@ const grade = new ShaderPass({
           col += spectrum(.35 + fk * .22) * smoothstep(rk, rk * .7, dg) * (.45 + .55 * smoothstep(rk * .5, rk, dg)) * .012 * uBlobV;
         }
       }
+      // film grade: teal in the shadows, warm highlights, a soft S-curve
+      float lg = dot(col, vec3(.2126, .7152, .0722));
+      col = mix(col, col * vec3(.82, 1.0, 1.14) + vec3(0.0, .004, .008), smoothstep(.3, .0, lg) * .7);
+      col = mix(col, col * vec3(1.1, 1.0, .86), smoothstep(.25, .9, lg) * .45);
+      vec3 cc = clamp(col, 0.0, 1.0); col = mix(col, cc * cc * (3.0 - 2.0 * cc), .22);
+      col = mix(vec3(dot(col, vec3(.2126, .7152, .0722))), col, 1.08);
       vec2 d = uv - .5; float r = dot(d, d);
       col *= 1.0 - r * 1.15;                                  // vignette
       vec2 px = floor(vUv * uRes) + floor(fract(uTime * 7.13) * 64.0) * vec2(5.588, 3.17);
@@ -285,6 +298,7 @@ const fluid = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMate
     }`
 }));
 fluid.scale.setScalar(.85); fluid.frustumCulled = false; blob.add(fluid);
+let blobGrow = 1;
 sys.visible = false;                                   // the three-body dance is retired (kept in code, not drawn)
 const bodies = [0, 1, 2].map(() => { const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), bodyMat); m.scale.setScalar(.46); m.frustumCulled = false; sys.add(m); return m; });
 // each body draws a swirl of light behind it, like matter pulled into a disc
@@ -375,23 +389,28 @@ const pointVS = `
     float bl = uBlobA / (1.0 + bd * bd * 30.0);
     col += c * bl * .3 + uFluo * (rim * (.45 + .5 * h) + rip * .4 + bl * .03 * settle);
     col *= aW * lf * (1.0 + glint * (1.6 + bl * 2.5));                // soft edges, shed sparkles, glints that catch the light
+    float swz = 0.0;
     vec4 wp = modelMatrix * vec4(q, 1.0);
     if (uSwirl > .001){
       // the points leave their photographs and join one slow galaxy
       float sw = clamp(uSwirl * 1.7 - h2 * .7, 0.0, 1.0); sw = sw * sw * (3.0 - 2.0 * sw);
       float r0 = 1.0 + pow(h, .75) * 15.0;
-      float halo = step(fract(h3 * 13.0), .18);
+      float halo = step(fract(h3 * 13.0), .1);
       float armI = step(.5, fract(h3 * 7.0));
-      float th0 = mix(armI * 3.14159 + 2.3 * log(r0) + (fract(h3 * 31.0) - .5) * 1.0, h3 * 18.85, halo);
+      float th0 = mix(armI * 3.14159 + 2.3 * log(r0) + (fract(h3 * 31.0) - .5) * (.45 + .03 * r0), h3 * 18.85, halo);
       float th = th0 + .9 / pow(r0, .75) * uSwirlT;
       vec3 disc = vec3(cos(th) * r0, (h2 - .5) * (2.2 - r0 * .1) * (1.0 + halo * 2.0) + sin(th * 3.0 + uSwirlT * .3) * .12, sin(th) * r0);
       disc = vec3(disc.x, disc.y * .9 - disc.z * .44, disc.y * .44 + disc.z * .9);
       wp.xyz = mix(wp.xyz, uSwC + disc, sw);
+      // arms glow brighter, outer arms cool to blue, the core burns warm
+      col *= mix(1.0, (1.0 - halo * .6) * (1.6 + 1.3 * exp(-r0 * .35)), sw);
+      col = mix(col, col * vec3(.75, .95, 1.3) + uFluo * .012, smoothstep(5.0, 14.0, r0) * sw * .6);
+      swz = sw;
     }
     vec4 mv = viewMatrix * wp;
     float dist = -mv.z;
     float sz = exp(uSmin + aS * (uSmax - uSmin)) * mix(.55, 1.0, settle) * (1.0 + rim * .8) * mix(1.0, kf * uCardK, uFlat);
-    float ps = sz * length(modelViewMatrix[0].xyz) * uPx / dist * uSizeK;    // glitter pass: smaller than the gaps; clear pass: fills them
+    float ps = sz * length(modelViewMatrix[0].xyz) * uPx / dist * uSizeK * (1.0 + swz * 1.4);    // glitter pass: smaller than the gaps; clear pass: fills them
     // depth of field: out-of-focus particles open into soft bokeh discs
     float coc = abs(dist - uFocus) / dist * uAper * uPx;
     float diam = max(max(ps, coc), 1.5);
@@ -576,6 +595,7 @@ function startTravel(i){
   S.camCurve = new THREE.CatmullRomCurve3([Q0, camMid, camApp, m.view.clone()], false, 'centripetal');
   S.look0 = look.clone(); S.fov0 = camera.fov; S.fov1 = memFov(m);
   S.dur = REDUCE ? 3 : clamp(P0.distanceTo(m.C) * .3, 4.4, 7.2);
+  S.bank = Math.sign(midP.clone().sub(P0).dot(side) || 1) * (REDUCE ? 0 : .07);
   ctl.yaw *= .3; ctl.pitch *= .3;
   whoosh(S.dur);
   return true;
@@ -601,7 +621,7 @@ function startFinale(){
 const SWIRL = { from: 0, to: 0, t: 0, d: 1 };
 function setSwirl(to, d){ SWIRL.from = SWIRL_U.value; SWIRL.to = to; SWIRL.t = now(); SWIRL.d = d; }
 function swirlView(){
-  const D = clamp(14.5 / (Math.tan(THREE.MathUtils.degToRad(29)) * Math.min(camera.aspect, 1.15)), 22, 52);
+  const D = clamp(13 / (Math.tan(THREE.MathUtils.degToRad(29)) * Math.min(camera.aspect, 1.2)), 18, 46);
   return CENTRE.clone().add(new V3(0, D * .42, D * .9));
 }
 function startSwirl(){
@@ -730,7 +750,7 @@ function frame(){
     basePos.copy(m.view).lerp(m.C, .1 * k);
     tmp.subVectors(m.C, m.view).normalize(); tmp2.crossVectors(tmp, Y).normalize();
     basePos.addScaledVector(tmp2, Math.sin(t * .27) * .05 * SCALE).addScaledVector(Y, Math.sin(t * .21) * .03 * SCALE);
-    look.copy(m.C);
+    look.copy(m.C).addScaledVector(Y, .22 * SCALE);          // friends sit in the lower third, the light above them
     fov += (memFov(m) - fov) * Math.min(1, dt * 2);
     // the light wanders among them
     const a = el * .5, amp = ease(seg(el, .4, 2.2));
@@ -744,7 +764,7 @@ function frame(){
     const k = clamp(el / 6, 0, 1);
     if (S.mode === 'swirl'){
       basePos.copy(S.camCurve.getPoint(easeIO(k)));
-      offs.subVectors(basePos, CENTRE).applyAxisAngle(Y, el * .025 * ease(seg(el, 3, 6)));
+      offs.subVectors(basePos, CENTRE).applyAxisAngle(Y, el * .03 * ease(seg(el, 3, 6))).multiplyScalar(1 - .14 * ease(seg(el, 6, 40)));
       basePos.copy(CENTRE).add(offs);
       look.copy(S.look0).lerp(CENTRE, ease(k));
       fov += (58 - fov) * Math.min(1, dt * 1.2);
@@ -778,6 +798,12 @@ function frame(){
   offs.applyQuaternion(qx).applyQuaternion(qy);
   camera.position.copy(look).add(offs);
   camera.lookAt(look);
+  // a camera operator's breath, and a lean into the turns while flying
+  let roll = REDUCE ? 0 : Math.sin(t * .31) * .006 + Math.sin(t * .17 + 1.3) * .004;
+  if (S.mode === 'travel') roll += Math.sin(clamp((t - S.t0) / S.dur, 0, 1) * Math.PI) * (S.bank || 0);
+  if (S.mode === 'swirl') roll += Math.sin(el * .05) * .05;
+  camera.rotateZ(roll);
+  if (!REDUCE){ camera.rotateX(Math.sin(t * .53) * .0018); camera.rotateY(Math.sin(t * .41 + .7) * .0022); }
   if (Math.abs(camera.fov - fov) > .001){ camera.fov = fov; camera.updateProjectionMatrix(); }
 
   // the light itself
@@ -801,6 +827,8 @@ function frame(){
   swirlCore.material.uniforms.uPx.value = px; swirlHaze.material.uniforms.uPx.value = px;
   }
   fluidU.uI.value = born * (1 + Math.sin(t * 4.1) * .025);
+  blobGrow += ((S.mode === 'swirl' ? 3.2 : 1) - blobGrow) * Math.min(1, dt * .8);   // the galaxy's core
+  fluid.scale.setScalar(.85 * blobGrow);
   // screen-space motion, so the drop stretches the way it travels
   tmp2.copy(blob.position).project(camera); tmp.copy(blobPrev).project(camera);
   fluidU.uVel.value.x += ((tmp2.x - tmp.x) / Math.max(dt, 1e-3) * .05 - fluidU.uVel.value.x) * Math.min(1, dt * 5);
@@ -877,6 +905,13 @@ function frame(){
 
   composer.render();
 }
+function setBars(){
+  const w = innerWidth, h = innerHeight;
+  const bar = w / h > 1.3 ? Math.max(0, (h - w / 2.39) / 2) : h * .065;     // 2.39:1 on wide screens, slim bars on phones
+  document.documentElement.style.setProperty('--bar', bar + 'px');
+}
+addEventListener('resize', setBars); setBars();
+requestAnimationFrame(() => { $('fade').classList.add('out'); setTimeout(() => document.body.classList.add('cine'), 600); });
 requestAnimationFrame(frame);
 addEventListener('visibilitychange', () => { if (actx){ document.hidden ? actx.suspend() : actx.resume(); } });
 window.__state = () => ({ cam: camera.position.toArray().map((v) => +v.toFixed(2)), fov: +camera.fov.toFixed(1), blob: blob.position.toArray().map((v) => +v.toFixed(2)), mode: S.mode, idx: S.idx, loaded: mems.filter(Boolean).length, revealed: mems.filter((m) => m && m.revealed).length });
