@@ -256,6 +256,36 @@ const bodyMat = new THREE.ShaderMaterial({
       gl_FragColor = vec4((body * sphere + glow * (1.0 - sphere * .6)) * smoothstep(1.0, .55, r) * uI, 1.0);
     }`
 });
+// the light is now one soft, liquid blob: milky mint-white with a thin deep-blue rim, always wobbling
+const fluidU = { uTime: timeU, uI: { value: 0 }, uVel: { value: new THREE.Vector2() } };
+const fluid = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMaterial({
+  uniforms: fluidU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; vec4 mv = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+    mv.xy += position.xy * length(modelViewMatrix[0].xyz); gl_Position = projectionMatrix * mv; }`,
+  fragmentShader: `uniform float uTime, uI; uniform vec2 uVel; varying vec2 vUv; ${NOISE}
+    void main(){
+      vec2 p = vUv * 2.0 - 1.0;
+      // it stretches a little along its motion, like a drop
+      float sp = length(uVel); vec2 dir = sp > 1e-4 ? uVel / sp : vec2(1.0, 0.0), nor = vec2(-dir.y, dir.x);
+      float st = min(sp, .3);
+      vec2 q = vec2(dot(p, dir) / (1.0 + st), dot(p, nor) * (1.0 + st * .45));
+      p = q.x * dir + q.y * nor;
+      float r = length(p), a = atan(p.y, p.x);
+      float wob = .06 * sin(2.0 * a + uTime * 1.25) + .045 * sin(3.0 * a - uTime * 1.6 + 1.0) + .025 * sin(5.0 * a + uTime * 2.2)
+                + (fbm(vec3(cos(a) * 1.4, sin(a) * 1.4, uTime * .45)) - .5) * .14;
+      float R = .46 * (1.0 + wob), e = r - R;
+      float inside = smoothstep(.015, -.035, e);
+      vec2 hl = p - vec2(.16, .14);
+      vec3 body = mix(vec3(.42, .92, .7), vec3(.82, 1.0, .9), exp(-dot(hl, hl) * 4.5));
+      body *= .86 + .16 * fbm(vec3(p * 3.0, uTime * .35));
+      float fringe = exp(-pow((e - .03) / .04, 2.0)) * (1.0 - inside);
+      float glow = exp(-max(e, 0.0) * 6.0) * (1.0 - inside);
+      vec3 col = body * inside * .78 + vec3(.04, .12, .95) * fringe * 1.1 + vec3(.2, .75, .6) * glow * .1;
+      gl_FragColor = vec4(col * smoothstep(1.0, .78, r) * uI, 1.0);
+    }`
+}));
+fluid.scale.setScalar(.85); fluid.frustumCulled = false; blob.add(fluid);
+sys.visible = false;                                   // the three-body dance is retired (kept in code, not drawn)
 const bodies = [0, 1, 2].map(() => { const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), bodyMat); m.scale.setScalar(.46); m.frustumCulled = false; sys.add(m); return m; });
 // each body draws a swirl of light behind it, like matter pulled into a disc
 const TR = 170;
@@ -752,7 +782,8 @@ function frame(){
 
   // the light itself
   const born = S.mode === 'intro' ? easeOut(seg(el, .3, 2.5)) : 1;
-  // three bodies: integrate the gravity in small steps, sample their paths for the swirls
+  // three bodies (retired): only simulated if shown again
+  if (sys.visible){
   const simDt = Math.min(dt, .05) * (REDUCE ? .5 : 1.15), SUB = 10;
   for (let k = 0; k < SUB; k++){
     tbStep(simDt / SUB); tbClock += simDt / SUB;
@@ -768,11 +799,17 @@ function frame(){
   }
   swirlGeo.attributes.position.needsUpdate = true; swirlGeo.attributes.a.needsUpdate = true;
   swirlCore.material.uniforms.uPx.value = px; swirlHaze.material.uniforms.uPx.value = px;
+  }
+  fluidU.uI.value = born * (1 + Math.sin(t * 4.1) * .025);
+  // screen-space motion, so the drop stretches the way it travels
+  tmp2.copy(blob.position).project(camera); tmp.copy(blobPrev).project(camera);
+  fluidU.uVel.value.x += ((tmp2.x - tmp.x) / Math.max(dt, 1e-3) * .05 - fluidU.uVel.value.x) * Math.min(1, dt * 5);
+  fluidU.uVel.value.y += ((tmp2.y - tmp.y) / Math.max(dt, 1e-3) * .05 / camera.aspect - fluidU.uVel.value.y) * Math.min(1, dt * 5);
   blobVel.subVectors(blob.position, blobPrev).divideScalar(Math.max(dt, 1e-3)); blobPrev.copy(blob.position);
   // embers
   embAcc += dt * (14 + Math.min(50, blobVel.length() * 12)) * born;
   while (embAcc >= 1){ embAcc -= 1; const e = EP[embNext]; embNext = (embNext + 1) % EMB;
-    e.p.copy(bodies[embNext % 3].getWorldPosition(new V3())).add(new V3(Math.random() - .5, Math.random() - .5, Math.random() - .5).multiplyScalar(.05));
+    e.p.copy(blob.position).add(new V3(Math.random() - .5, Math.random() - .5, Math.random() - .5).multiplyScalar(.14));
     e.v.set(Math.random() - .5, Math.random() - .3, Math.random() - .5).multiplyScalar(.35).addScaledVector(blobVel, -.12);
     e.life = 0; e.max = 1.4 + Math.random() * 2.4; }
   const ep = embGeo.attributes.position.array, ea = embGeo.attributes.a.array;
