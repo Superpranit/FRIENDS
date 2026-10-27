@@ -695,6 +695,7 @@ function buildCloudAR(parent, cloud){
     st,
     found(){ const now = performance.now() / 1000; if (st.foundAt === null || st.lostAt === null || now - st.lostAt > 1.5) st.foundAt = now; st.lostAt = null; chimeAR(); },
     lost(){ st.lostAt = performance.now() / 1000; },
+    depth(){ st.frozen = true; return U.uDepth.value; },
     update(renderer, camera){
       const now = performance.now() / 1000;
       U.uTime.value = now; U.uPx.value = camera.projectionMatrix.elements[5] * renderer.domElement.height * .5;
@@ -702,7 +703,7 @@ function buildCloudAR(parent, cloud){
       const t = now - st.foundAt, w = clamp01((t - .05) / 1.1);         // the photograph turns into points, sweeping out from the friends
       U.uWaveR.value = (R + 1.2) * (1 - Math.pow(1 - w, 3)); U.uWaveA.value = 1 - smooth(clamp01((w - .7) / .3));
       U.uLevel.value = smooth(clamp01((t - .05) / .8));
-      U.uDepth.value = .14 * smooth(clamp01((t - .5) / 1.8));         // and lifts into depth as the box opens around it
+      if (!st.frozen) U.uDepth.value = .025 * smooth(clamp01((t - .3) / .9));   // and lifts into depth, then the box takes over
     }
   };
 }
@@ -718,7 +719,7 @@ function chimeAR(){
 /* =====================================================================
    ON INTO THE MEMORY BOX (the void with all the memories)
    ===================================================================== */
-let boxing = false, boxFrame = null, boxReady = false, filmStopped = false;
+let boxing = false, boxFrame = null, boxReady = false, filmStopped = false, posing = false, poseNow = null;
 // the memory box lives in this same page: it loads quietly behind the AR and fades in, no page change
 function prefetchBox(){
   if (boxFrame) return;
@@ -740,7 +741,8 @@ function goToBox(opts = {}){
   const reveal = () => {
     if (!boxReady && performance.now() - t0 < 20000){ setTimeout(reveal, 150); return; }
     filmStopped = true;
-    try { boxFrame.contentWindow.postMessage({ type: 'go', at: opts.at || null }, '*'); boxFrame.contentWindow.focus(); } catch (e) {}
+    try { boxFrame.contentWindow.postMessage({ type: 'go', at: opts.at || null, pose: opts.pose ? opts.pose() : null }, '*'); boxFrame.contentWindow.focus(); } catch (e) {}
+    if (opts.pose) posing = true;
     boxFrame.style.transition = 'opacity ' + (dissolve ? 1.8 : 1.2) + 's ease';
     boxFrame.style.opacity = '1'; boxFrame.style.pointerEvents = 'auto';
     setTimeout(() => { $('toBox').style.transition = 'opacity 2s ease'; $('toBox').classList.remove('on'); $('ar').style.visibility = 'hidden'; opts.onShown && opts.onShown(); }, dissolve ? 1900 : 900);
@@ -788,13 +790,24 @@ async function startAR(){
       const inv = anchor.group.matrixWorld.clone().invert();
       const pos = camera.getWorldPosition(new THREE.Vector3()).applyMatrix4(inv);
       const dir = camera.getWorldDirection(new THREE.Vector3()).transformDirection(inv);
-      goToBox({ at: 'hilltop', onShown: () => { renderer.setAnimationLoop(null); try { mindar.stop(); } catch (e) {} } });   // straight into the same memory, inside the box
+      const depth = fx.depth();
+      poseNow = () => {                                                 // the phone camera, as seen from the print
+        anchor.group.updateMatrixWorld(true); camera.updateMatrixWorld(true);
+        const inv = anchor.group.matrixWorld.clone().invert();
+        const p = camera.getWorldPosition(new THREE.Vector3()).applyMatrix4(inv);
+        const q = anchor.group.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(camera.getWorldQuaternion(new THREE.Quaternion()));
+        return { p: p.toArray(), q: q.toArray(), fov: camera.fov, aspect: camera.aspect, depth };
+      };
+      goToBox({ at: 'hilltop', pose: poseNow, onShown: () => {
+        posing = false; try { boxFrame.contentWindow.postMessage({ type: 'poseEnd' }, '*'); } catch (e) {}
+        renderer.setAnimationLoop(null); try { mindar.stop(); } catch (e) {} } });   // straight into the same memory, inside the box
     };
     $('enterBtn').addEventListener('click', enter);
     renderer.setAnimationLoop(() => {
       if (fx) fx.update(renderer, camera);
       renderer.render(scene, camera);
-      if (fx && tracking && !entering && fx.st.foundAt !== null && performance.now() / 1000 - fx.st.foundAt > .9) enter();   // seen -> straight into the memory box
+      if (fx && tracking && !entering && fx.st.foundAt !== null && performance.now() / 1000 - fx.st.foundAt > 1.25) enter();   // seen -> straight into the memory box
+      if (posing && boxFrame) try { boxFrame.contentWindow.postMessage({ type: 'pose', pose: poseNow() }, '*'); } catch (e) {}
 
     });
   } catch (e) {

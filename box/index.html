@@ -109,9 +109,9 @@ const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), .42, .5, .86);
 composer.addPass(bloom);
 const grade = new ShaderPass({
   uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uRes: { value: new THREE.Vector2(1, 1) }, uAspect: { value: 1 },
-    uBlob: { value: new THREE.Vector2(.5, .5) }, uBlobV: { value: 0 }, uBlobS: { value: .5 }, uGlass: { value: 1 } },
+    uBlob: { value: new THREE.Vector2(.5, .5) }, uBlobV: { value: 0 }, uBlobS: { value: .5 }, uGlass: { value: 1 }, uGradeMix: { value: 1 } },
   vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-  fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime, uAspect, uBlobV, uBlobS, uGlass; uniform vec2 uRes, uBlob; varying vec2 vUv;
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime, uAspect, uBlobV, uBlobS, uGlass, uGradeMix; uniform vec2 uRes, uBlob; varying vec2 vUv;
     float hh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
     float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       return mix(mix(hh(i), hh(i + vec2(1.0, 0.0)), f.x), mix(hh(i + vec2(0.0, 1.0)), hh(i + vec2(1.0, 1.0)), f.x), f.y); }
@@ -163,6 +163,7 @@ const grade = new ShaderPass({
       col *= 1.0 - r * 1.15;                                  // vignette
       vec2 px = floor(vUv * uRes) + floor(fract(uTime * 7.13) * 64.0) * vec2(5.588, 3.17);
       col += (fract(52.9829189 * fract(dot(px, vec2(.06711056, .00583715)))) - .5) * .016;   // film grain
+      col = mix(texture2D(tDiffuse, vUv).rgb, col, uGradeMix);
       gl_FragColor = vec4(max(col, 0.0), 1.0);
     }`
 });
@@ -353,9 +354,9 @@ const OVER = { pos: CENTRE.clone().add(new V3(0, 1.2, 22)), look: CENTRE.clone()
 
 const pointVS = `
   uniform vec3 uLo, uHi, uWaveC, uRipC, uBlob, uFluo, uSwC;
-  uniform float uSmin, uSmax, uPx, uTime, uLevel, uDust, uWaveR, uWaveA, uRipR, uRipA, uBlobA, uFlat, uPlane, uCardK, uSwirl, uSwirlT, uFocus, uAper, uGain, uKeep, uShed, uClear, uMode, uSizeK;
+  uniform float uSmin, uSmax, uPx, uTime, uLevel, uDust, uWaveR, uWaveA, uRipR, uRipA, uBlobA, uFlat, uPlane, uCardK, uSwirl, uSwirlT, uFocus, uAper, uGain, uKeep, uShed, uClear, uMode, uSizeK, uAR, uArDv, uArS, uArDepth;
   attribute float aS, aW;
-  varying vec3 vC; varying float vBok;
+  varying vec3 vC; varying float vBok; varying float vW;
   float hsh(vec3 p){ p = fract(p * .3183099 + .1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
   void main(){
     vec3 p = uLo + position * (uHi - uLo);
@@ -370,7 +371,12 @@ const pointVS = `
     // resting memories fold into a glowing photograph (projected along the original camera's rays)
     float kf = uPlane / max(-p.z, .3);
     vec3 card = vec3(p.xy * kf * uCardK, -uPlane + (p.z + uPlane) * .04);
+    vW = aW;
     vec3 pr = mix(p, card, uFlat);
+    // the exact shape the AR showed on the print (so the hand-over from the camera is invisible)
+    float kza = uArDv / max(-p.z, .3);
+    vec3 arP = (vec3(p.x * kza, p.y * kza, -(-p.z - 2.0) * uArDepth) - vec3(0.0, 0.0, uArDv)) / uArS;
+    pr = mix(pr, arP, uAR);
     vec3 q = pr + scat * (1.0 - settle);
     // the memory is always shedding a few glittering particles into the dark
     float loose = step(1.0 - uShed, h3) * settle;
@@ -426,7 +432,7 @@ const pointVS = `
     }
     vec4 mv = viewMatrix * wp;
     float dist = -mv.z;
-    float sz = exp(uSmin + aS * (uSmax - uSmin)) * mix(.55, 1.0, settle) * (1.0 + rim * .8 + ff * ffp * .9) * mix(1.0, kf * uCardK, uFlat);
+    float sz = exp(uSmin + aS * (uSmax - uSmin)) * mix(.55, 1.0, settle) * (1.0 + rim * .8 + ff * ffp * .9) * mix(1.0, kf * uCardK, uFlat) * mix(1.0, kza / uArS, uAR);
     float ps = sz * length(modelViewMatrix[0].xyz) * uPx / dist * uSizeK * (1.0 + swz * .35);
     if (swGone > .985){ vC = vec3(0.0); vBok = 0.0; gl_PointSize = 0.0; gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }    // glitter pass: smaller than the gaps; clear pass: fills them
     // depth of field: out-of-focus particles open into soft bokeh discs
@@ -441,9 +447,10 @@ const pointVS = `
     gl_PointSize = clamp(diam, 0.0, 70.0);
     gl_Position = projectionMatrix * mv;
   }`;
-const pointFS = `uniform float uMode; varying vec3 vC; varying float vBok;
+const pointFS = `uniform float uMode, uAR; varying vec3 vC; varying float vBok; varying float vW;
   void main(){
     float r = length(gl_PointCoord - .5) * 2.0; if (r > 1.0) discard;
+    if (vW < uAR * .45) discard;                                   // at the hand-over the misty edges are clear, like the print
     if (uMode > .5){ gl_FragColor = vec4(vC * (1.0 - r * r * .2), 1.0); return; }   // clear: a solid, sharp splat
     float soft = exp(-r * r * 3.2) * 1.9;                                  // a tiny glowing particle
     float disc = smoothstep(1.0, .84, r) * (.7 + .5 * smoothstep(.55, .95, r));   // a lens bokeh disc with a brighter rim
@@ -476,7 +483,7 @@ function makeMemory(meta, buf, i){
     uPx: { value: 1 }, uTime: timeU, uLevel: { value: 0 }, uDust: { value: 0 }, uFluo: { value: FLUO_LIN },
     uWaveC: { value: focus.clone() }, uWaveR: { value: 0 }, uWaveA: { value: 0 },
     uRipC: { value: focus.clone() }, uRipR: { value: 0 }, uRipA: { value: 0 },
-    uBlob: { value: new V3(0, 0, 999) }, uBlobA: { value: 0 }, uFlat: { value: 0 }, uPlane: { value: -meta.focus[2] }, uCardK: { value: cardK }, uSwirl: SWIRL_U, uSwirlT: SWIRLT_U, uSwC: { value: CENTRE },
+    uBlob: { value: new V3(0, 0, 999) }, uBlobA: { value: 0 }, uFlat: { value: 0 }, uPlane: { value: -meta.focus[2] }, uCardK: { value: cardK }, uSwirl: SWIRL_U, uSwirlT: SWIRLT_U, uSwC: { value: CENTRE }, uAR: { value: 0 }, uArDv: { value: (4 / 3 / 2) / (meta.cy / meta.f) }, uArS: { value: 3.37 }, uArDepth: { value: .14 },
     uFocus: FOCUS_U, uAper: APER_U, uGain: { value: 1.0 }, uKeep: { value: .14 }, uShed: { value: .07 }, uClear: { value: 0 }, uMode: { value: 0 }, uSizeK: { value: .78 }
   };
   const pts = new THREE.Points(g, new THREE.ShaderMaterial({ uniforms: U, vertexShader: pointVS, fragmentShader: pointFS, vertexColors: true,
@@ -603,6 +610,22 @@ function memFov(m){
 
 function setClear(m, to, d, delay = 0){ m.clearFrom = m.U.uClear.value; m.clearTo = to; m.clearT = now() + delay; m.clearD = d; }
 // arriving from the AR: start in the very memory you scanned, already assembled, and glide into it
+const AR = { pose: null, live: false };
+function arPoseWorld(m, pose){
+  // poster space -> this memory's own space (the same similarity the AR page uses) -> the box world
+  const dv = m.U.uArDv.value, sAR = m.U.uArS.value;
+  m.pts.updateMatrixWorld(true);
+  const pos = m.pts.localToWorld(new V3(pose.p[0], pose.p[1], pose.p[2] - dv).divideScalar(sAR));
+  const q = m.pts.getWorldQuaternion(new THREE.Quaternion()).multiply(new THREE.Quaternion(...pose.q));
+  return { pos, q, fov: pose.fov, aspect: pose.aspect };
+}
+function diveFromAR(i, pose){
+  diveInto(i);
+  const m = mems[i];
+  AR.pose = pose; AR.live = true; S.arT = now();
+  m.U.uAR.value = 1; m.U.uArDepth.value = pose.depth;
+  grade.uniforms.uGradeMix.value = 0; bloom.strength = 0;
+}
 function diveInto(i){
   const m = mems[i];
   m.revealed = true; m.waveT = .001; m.frac = 1; m.pts.geometry.setDrawRange(0, m.n);
@@ -771,6 +794,23 @@ function frame(){
     blob.position.copy(blobStart).add(new V3(0, Math.sin(t * .8) * .08, 0));
     fov += (overFov() - fov) * Math.min(1, dt * 2);
     if (el > INTRO && mems[0]) startTravel(0);
+  } else if (S.mode === 'dive' && AR.pose){
+    // 1) while the AR fades away, this camera IS the phone's camera; 2) then it glides to the memory's own view
+    const m = mems[S.idx];
+    const w = arPoseWorld(m, AR.pose);
+    if (AR.live){ S.arFrom = w; S.t0 = t; }
+    const k = AR.live ? 0 : easeIO(seg(t - S.t0, 0, REDUCE ? 1.8 : 3.6));
+    const lookAt = m.C.clone().addScaledVector(Y, .22 * SCALE);
+    const qEnd = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(m.view, lookAt, Y));
+    camera.position.copy(S.arFrom.pos).lerp(m.view, k);
+    camera.quaternion.copy(S.arFrom.q).slerp(qEnd, k);
+    camera.fov = S.arFrom.fov + (memFov(m) - S.arFrom.fov) * k; camera.aspect = S.arFrom.aspect + (innerWidth / innerHeight - S.arFrom.aspect) * k; camera.updateProjectionMatrix();
+    fov = camera.fov; look.copy(lookAt);
+    m.U.uAR.value = 1 - easeIO(seg(k, .05, .8));                  // the flat AR picture inflates into the full 3D memory
+    grade.uniforms.uGradeMix.value = easeIO(seg(k, .2, .8)); bloom.strength = .42 * grade.uniforms.uGradeMix.value;
+    if (k > .55 && !document.body.classList.contains('cine')) document.body.classList.add('cine');
+    S.manualCam = true;
+    if (k >= 1){ AR.pose = null; m.U.uAR.value = 0; grade.uniforms.uGradeMix.value = 1; bloom.strength = .42; S.manualCam = false; arrive(); }
   } else if (S.mode === 'dive'){
     const m = mems[S.idx], k = easeIO(seg(el, 0, REDUCE ? 1.5 : 3.4));
     basePos.copy(S.diveFrom).lerp(m.view, k);
@@ -838,6 +878,7 @@ function frame(){
   if (SWIRL.t){ SWIRL_U.value = SWIRL.from + (SWIRL.to - SWIRL.from) * easeIO(seg(t - SWIRL.t, 0, SWIRL.d)); }
   if (SWIRL_U.value > .001) SWIRLT_U.value += dt * (REDUCE ? .25 : .55);          // slow motion
   // apply look-around and zoom around the look target
+  if (!S.manualCam){
   offs.subVectors(basePos, look).multiplyScalar(S.mode === 'travel' ? 1 : ctl.zoom);
   qy.setFromAxisAngle(Y, ctl.yaw); tmp.crossVectors(Y, offs).normalize(); if (tmp.lengthSq() < .1) tmp.copy(X);
   qx.setFromAxisAngle(tmp, ctl.pitch);
@@ -851,6 +892,7 @@ function frame(){
   camera.rotateZ(roll);
   if (!REDUCE){ camera.rotateX(Math.sin(t * .53) * .0018); camera.rotateY(Math.sin(t * .41 + .7) * .0022); }
   if (Math.abs(camera.fov - fov) > .001){ camera.fov = fov; camera.updateProjectionMatrix(); }
+  }
 
   // the light itself
   const born = S.mode === 'intro' ? easeOut(seg(el, .3, 2.5)) : 1;
@@ -872,7 +914,7 @@ function frame(){
   swirlGeo.attributes.position.needsUpdate = true; swirlGeo.attributes.a.needsUpdate = true;
   swirlCore.material.uniforms.uPx.value = px; swirlHaze.material.uniforms.uPx.value = px;
   }
-  fluidU.uI.value = born * (1 + Math.sin(t * 4.1) * .025);
+  fluidU.uI.value = born * (1 + Math.sin(t * 4.1) * .025) * (AR.pose ? (AR.live ? 0 : grade.uniforms.uGradeMix.value) : 1);
   blobGrow += ((S.mode === 'swirl' ? 1.5 : 1) - blobGrow) * Math.min(1, dt * .8);   // the galaxy's core
   fluid.scale.setScalar(.42 * blobGrow * clamp(camera.position.distanceTo(blob.position) / 5.5, .75, 2.4) * clamp(camera.fov / 40, .8, 1.5));   // same size on screen near or far
   // screen-space motion, so the drop stretches the way it travels
@@ -961,10 +1003,13 @@ function openCurtain(){ requestAnimationFrame(() => { $('fade').classList.add('o
 if (location.hash === '#ar' || EMBED){ $('fade').style.background = '#fff'; $('fade').style.transitionDuration = '2.4s'; }
 if (EMBED){
   addEventListener('message', (e) => {
+    if (e.data && e.data.type === 'pose' && AR.live){ AR.pose = e.data.pose; return; }
+    if (e.data && e.data.type === 'poseEnd'){ AR.live = false; return; }
     if (!e.data || e.data.type !== 'go' || GO) return;
     GO = true; S.t0 = now(); for (const m of mems) if (m) m.born = now();
     const i = e.data.at ? mems.findIndex((m) => m && m.meta.name === e.data.at) : -1;
-    if (i >= 0){ diveInto(i); $('fade').style.transition = 'none'; $('fade').classList.add('out'); setTimeout(() => document.body.classList.add('cine'), 300); }   // the AR dissolves straight into this memory
+    if (i >= 0 && e.data.pose){ diveFromAR(i, e.data.pose); $('fade').style.transition = 'none'; $('fade').classList.add('out'); }
+    else if (i >= 0){ diveInto(i); $('fade').style.transition = 'none'; $('fade').classList.add('out'); setTimeout(() => document.body.classList.add('cine'), 300); }   // the AR dissolves straight into this memory
     else openCurtain();
   });
 } else openCurtain();
