@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>Memory Box</title>
+<script>
+/* Phones and tablets go straight to the camera (https only). Laptops see the print and a way in. */
+try {
+  var secure = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  if (secure && (matchMedia('(pointer: coarse)').matches || location.hash === '#ar')) document.documentElement.classList.add('auto');
+} catch (e) {}
+</script>
+<style>html.auto #intro{visibility:hidden}</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;1,500&family=Manrope:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#000; --mist:#e8fffb; --fluo:#7ff6e6;
+  --muted:rgba(232,255,251,.62); --line:rgba(200,255,245,.26);
+  --display:'Cormorant Garamond',Georgia,serif; --body:'Manrope',system-ui,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--ink);color:var(--mist);font-family:var(--body);-webkit-font-smoothing:antialiased;overscroll-behavior:none}
+button{font:inherit;color:inherit}
+.hidden{display:none !important}
+
+/* ---------- INTRO (laptops) ---------- */
+.intro{min-height:100%;display:flex;align-items:center;justify-content:center;padding:calc(32px + env(safe-area-inset-top,0px)) 16px calc(32px + env(safe-area-inset-bottom,0px));
+  background:radial-gradient(80% 70% at 50% 35%, #0d1a1a 0%, #000 70%)}
+.intro-grid{display:flex;flex-wrap:wrap;gap:40px;align-items:center;justify-content:center;max-width:980px;width:100%}
+.print{flex:0 1 360px;min-width:0}
+.print img{display:block;width:100%;height:auto;border-radius:3px;box-shadow:0 0 0 1px var(--line), 0 30px 80px -20px rgba(127,246,230,.25)}
+.side{flex:1 1 300px;max-width:400px;min-width:0;display:flex;flex-direction:column;gap:18px}
+.side h1{margin:0;font:italic 500 clamp(38px,6vw,56px)/1 var(--display);letter-spacing:.01em;overflow-wrap:anywhere}
+.side p{margin:0;color:var(--muted);line-height:1.6;font-size:15px}
+.row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.btn{display:inline-flex;align-items:center;gap:10px;min-height:48px;padding:0 20px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.05);cursor:pointer;font:600 12px/1 var(--body);letter-spacing:.16em;text-transform:uppercase;text-decoration:none;color:var(--mist)}
+.btn.primary{background:var(--mist);color:#000;border-color:var(--mist)}
+.btn:focus-visible{outline:3px solid var(--fluo);outline-offset:3px}
+.btn svg{width:18px;height:18px}
+.qr{display:flex;gap:14px;align-items:center;color:var(--muted);font-size:13px;line-height:1.5}
+.qr img{width:92px;height:92px;border-radius:6px;background:#fff;padding:6px;flex:none}
+@media (pointer: coarse) and (max-width: 820px){.print{display:none}}
+
+/* ---------- AR ---------- */
+.ar{position:fixed;inset:0;background:#000;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none}
+.ar-stage{position:absolute;inset:0}
+.ar-stage video{object-fit:cover}
+.top{position:absolute;right:0;top:0;z-index:6;padding:calc(12px + env(safe-area-inset-top,0px)) 14px 0}
+.icon-btn{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:rgba(0,0,0,.45);cursor:pointer;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.icon-btn svg{width:18px;height:18px}
+.icon-btn:focus-visible{outline:3px solid var(--fluo);outline-offset:3px}
+.skipbox{position:fixed;left:50%;bottom:calc(26px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:9;padding:10px 16px;border-radius:999px;border:1px solid rgba(255,255,255,.35);background:rgba(0,0,0,.45);color:#fff;font:500 12px/1.3 system-ui,sans-serif;text-decoration:none;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity 1s}
+.skipbox.on{opacity:1;pointer-events:auto}
+.scanning{position:absolute;inset:0;z-index:4;display:flex;align-items:center;justify-content:center;pointer-events:none}
+.scan-frame{position:relative;width:min(62vw,300px)}
+.scan-frame img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.22;border-radius:3px}
+.scan-frame i{position:absolute;width:34px;height:34px;border:0 solid #fff}
+.scan-frame i:nth-child(2){top:-6px;left:-6px;border-top-width:2px;border-left-width:2px}
+.scan-frame i:nth-child(3){top:-6px;right:-6px;border-top-width:2px;border-right-width:2px}
+.scan-frame i:nth-child(4){bottom:-6px;left:-6px;border-bottom-width:2px;border-left-width:2px}
+.scan-frame i:nth-child(5){bottom:-6px;right:-6px;border-bottom-width:2px;border-right-width:2px}
+.scan-line{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#fff,transparent);box-shadow:0 0 12px #fff;animation:scan 2.4s ease-in-out infinite}
+@keyframes scan{0%,100%{top:4%}50%{top:96%}}
+.loading{position:absolute;inset:0;z-index:7;display:grid;place-items:center;background:rgba(0,0,0,.55)}
+.loading i{width:42px;height:42px;border-radius:50%;border:2px solid rgba(255,255,255,.2);border-top-color:#fff;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.err{position:absolute;inset:0;z-index:8;display:grid;place-items:center;padding:24px;background:rgba(0,0,0,.94)}
+.err div{max-width:360px;text-align:center}
+.err p{margin:0 0 18px;color:var(--muted);line-height:1.6;font-size:14px}
+.err .row{justify-content:center}
+@media (prefers-reduced-motion: reduce){.scan-line{animation:none}}
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+    "mindar-image-three": "https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"
+  }
+}
+</script>
+</head>
+<body>
+
+<!-- ================= INTRO (laptops) ================= -->
+<main class="intro" id="intro">
+  <div class="intro-grid">
+    <div class="print"><img id="printImg" src="poster.jpg" alt=""></div>
+    <section class="side" aria-labelledby="t">
+      <h1 id="t">Memory Box</h1>
+      <p id="sub">Point a phone at the print. The photograph turns into light and opens the memory box.</p>
+      <div class="row">
+        <a class="btn primary" href="box/">Open the memory box</a>
+        <button class="btn" id="startBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3.5"/></svg>
+          Scan here
+        </button>
+      </div>
+      <div class="qr"><img src="qr.svg" alt="QR code for this page"><span>On a phone? Scan this, then point the camera at the print.</span></div>
+    </section>
+  </div>
+</main>
+
+<!-- ================= AR ================= -->
+<div class="ar hidden" id="ar">
+  <div class="ar-stage" id="arStage"></div>
+  <a class="skipbox" id="skipBox" href="box/">Can't find the print? Open the memory box</a>
+  <div class="scanning hidden" id="scanning">
+    <div class="scan-frame" id="scanFrame"><img src="poster.jpg" alt=""><i></i><i></i><i></i><i></i><div class="scan-line"></div></div>
+  </div>
+  <div class="top">
+    <button class="icon-btn" id="closeBtn" type="button" aria-label="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="loading hidden" id="loading" aria-label="Loading"><i></i></div>
+  <div class="err hidden" id="err" role="alert">
+    <div>
+      <p id="errMsg">Allow camera access for this site in your browser settings, then try again.</p>
+      <div class="row"><button class="btn primary" id="retryBtn" type="button">Try again</button><a class="btn" href="box/">Open the memory box</a></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+
+const $ = (id) => document.getElementById(id);
+const isHttps = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+const clamp01 = (x) => Math.max(0, Math.min(1, x));
+const smooth = (t) => t * t * (3 - 2 * t);
+const AR_SCALE = 3.37;                                  // scene metres -> print widths (the box uses the same)
+
+/* the box's description: title, and which memory is on the print */
+const BOXP = fetch('box/box.json').then((r) => r.json());
+BOXP.then((box) => {
+  if (box.title){ document.title = box.title; $('t').textContent = box.title; }
+  if (box.subtitle) $('sub').textContent = box.subtitle;
+  const m = box.memories.find((x) => x.name === box.ar) || box.memories[0];
+  $('printImg').alt = 'The print that opens ' + (box.title || 'the memory box');
+  $('printImg').width = m.W; $('printImg').height = m.H;
+  $('scanFrame').style.aspectRatio = m.W + ' / ' + m.H;
+}).catch(() => {});
+
+/* sound: one soft glass chime when the print is found */
+let actx = null, chimed = false;
+function chime(){
+  if (chimed) return; chimed = true;
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === 'suspended') actx.resume();
+    const t = actx.currentTime, out = actx.createGain(); out.gain.value = .06; out.connect(actx.destination);
+    [[1, 1, 2.6], [1.5, .45, 2.0], [2, .3, 1.6]].forEach(([m, g0, dur], k) => { const o = actx.createOscillator(), g = actx.createGain(); o.frequency.value = 587.33 * m;
+      g.gain.setValueAtTime(0, t + k * .05); g.gain.linearRampToValueAtTime(g0, t + k * .05 + .01); g.gain.exponentialRampToValueAtTime(.0001, t + k * .05 + dur); o.connect(g); g.connect(out); o.start(t + k * .05); o.stop(t + k * .05 + dur + .1); });
+  } catch (e) {}
+}
+
+/* =====================================================================
+   THE MEMORY BOX'S OWN POINT CLOUD, LYING IN THE PRINT
+   ===================================================================== */
+async function loadCloud(){
+  const box = await BOXP;
+  const meta = box.memories.find((m) => m.name === box.ar) || box.memories[0];
+  const buf = await fetch('box/' + meta.file).then((r) => { if (!r.ok) throw new Error(meta.file); return r.arrayBuffer(); });
+  return { meta, buf };
+}
+function buildCloudAR(parent, cloud){
+  const { meta, buf } = cloud, n = meta.n, PH = meta.H / meta.W;     // the print has the photo's shape; its width is 1 unit
+  const root = new THREE.Group(); parent.add(root);
+  // the wall around the print: invisible, but it hides whatever is behind it, so the print is a window
+  const occMat = new THREE.MeshBasicMaterial({ colorWrite: false });
+  [[0, PH / 2 + 3, 12, 6], [0, -PH / 2 - 3, 12, 6], [-.5 - 3, 0, 6, PH + .2], [.5 + 3, 0, 6, PH + .2]].forEach(([x, y, w, h]) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), occMat); m.position.set(x, y, 0); m.renderOrder = -1; root.add(m);
+  });
+  // the photo's own camera stands Dv in front of the print, so through the print you see exactly the photograph
+  const Dv = (PH / 2) / (meta.cy / meta.f);
+  const ib16 = new THREE.InterleavedBuffer(new Uint16Array(buf, 0, n * 6), 6), ib8 = new THREE.InterleavedBuffer(new Uint8Array(buf, 0, n * 12), 12);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.InterleavedBufferAttribute(ib16, 3, 0, true));
+  g.setAttribute('color', new THREE.InterleavedBufferAttribute(ib8, 3, 6, true));
+  g.setAttribute('aS', new THREE.InterleavedBufferAttribute(ib8, 1, 9, true));
+  g.setAttribute('aW', new THREE.InterleavedBufferAttribute(ib8, 1, 10, true));
+  const focus = new THREE.Vector3(...meta.focus);
+  const U = { uLo: { value: new THREE.Vector3(...meta.lo) }, uHi: { value: new THREE.Vector3(...meta.hi) }, uSmin: { value: meta.smin }, uSmax: { value: meta.smax },
+    uPx: { value: 1 }, uTime: { value: 0 }, uWaveC: { value: focus }, uWaveR: { value: 0 }, uWaveA: { value: 0 }, uLevel: { value: 0 }, uDv: { value: Dv }, uDepth: { value: 0 } };
+  const pts = new THREE.Points(g, new THREE.ShaderMaterial({
+    uniforms: U, vertexColors: true, transparent: true, depthWrite: false,
+    vertexShader: `uniform vec3 uLo, uHi, uWaveC; uniform float uSmin, uSmax, uPx, uTime, uWaveR, uWaveA, uLevel, uDv, uDepth; attribute float aS, aW; varying vec3 vC; varying float vA;
+      float hsh(vec3 p){ p = fract(p * .3183099 + .1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+      void main(){
+        vec3 p = uLo + position * (uHi - uLo);
+        float h = hsh(position * 613.0), h2 = hsh(position * 271.0 + 3.1), h3 = hsh(position * 997.0 + 7.7);
+        float d = distance(p, uWaveC);
+        float passed = 1.0 - smoothstep(uWaveR - .9, uWaveR, d); float settle = passed * passed * (3.0 - 2.0 * passed);
+        vec3 drift = vec3(sin(uTime * .21 + h * 40.0), cos(uTime * .17 + h2 * 31.0), sin(uTime * .13 + h3 * 17.0));
+        // laid on the print along the photo's own camera rays (so it matches the photograph from any angle), with a little depth
+        float kz = uDv / max(-p.z, .3);
+        vec3 pp = vec3(p.x * kz, p.y * kz, -(-p.z - 2.0) * uDepth);
+        vec3 q = pp + (normalize(vec3(h, h2, h3) - .5 + 1e-4) * (.18 + 1.1 * h2 * h2) + drift * .12) * (1.0 - settle) * .12;
+        float lum = dot(color, vec3(.2126, .7152, .0722));
+        vec3 dim = (vec3(lum) * .7 + color * .3) * vec3(.55, .8, 1.0) * .35;
+        float rim = exp(-pow((d - uWaveR) / .22, 2.0)) * uWaveA;
+        vC = mix(dim, color * uLevel, settle) + vec3(.55, 1.0, .9) * rim * (.4 + .5 * h);
+        vA = pow(aW, 1.6) * mix(.6, 1.0, settle);                 // the soft edges melt into the real print
+        vec4 mv = modelViewMatrix * vec4(q, 1.0);
+        float sz = exp(uSmin + aS * (uSmax - uSmin)) * kz * mix(.6, 1.16, settle);
+        gl_PointSize = clamp(sz * length(modelViewMatrix[0].xyz) * uPx / -mv.z, 1.0, 40.0);
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `varying vec3 vC; varying float vA; void main(){ float r = length(gl_PointCoord - .5) * 2.0; if (r > 1.0) discard; float a = vA * smoothstep(1.0, .6, r); if (a < .02) discard; gl_FragColor = vec4(vC, a); }`
+  }));
+  pts.frustumCulled = false; root.add(pts);
+  let R = 0; const lo = U.uLo.value, hi = U.uHi.value;
+  for (const x of [lo.x, hi.x]) for (const y of [lo.y, hi.y]) for (const z of [lo.z, hi.z]) R = Math.max(R, focus.distanceTo(new THREE.Vector3(x, y, z)));
+  const st = { foundAt: null, lostAt: null };
+  return {
+    st, meta,
+    found(){ const now = performance.now() / 1000; if (st.foundAt === null || st.lostAt === null || now - st.lostAt > 1.5) st.foundAt = now; st.lostAt = null; chime(); },
+    lost(){ st.lostAt = performance.now() / 1000; },
+    depth(){ st.frozen = true; return U.uDepth.value; },
+    update(renderer, camera){
+      const now = performance.now() / 1000;
+      U.uTime.value = now; U.uPx.value = camera.projectionMatrix.elements[5] * renderer.domElement.height * .5;
+      if (st.foundAt === null) return;
+      const t = now - st.foundAt, w = clamp01((t - .05) / 1.1);         // the photograph turns into points, sweeping out from the centre
+      U.uWaveR.value = (R + 1.2) * (1 - Math.pow(1 - w, 3)); U.uWaveA.value = 1 - smooth(clamp01((w - .7) / .3));
+      U.uLevel.value = smooth(clamp01((t - .05) / .8));
+      if (!st.frozen) U.uDepth.value = .025 * smooth(clamp01((t - .3) / .9));   // lifts into depth, then the box takes over
+    }
+  };
+}
+
+/* =====================================================================
+   ON INTO THE MEMORY BOX: it loads quietly behind the camera, same page
+   ===================================================================== */
+let boxing = false, boxFrame = null, boxReady = false, posing = false, poseNow = null;
+function prefetchBox(){
+  if (boxFrame) return;
+  boxFrame = document.createElement('iframe');
+  boxFrame.src = 'box/#embed';
+  boxFrame.title = 'Memory box';
+  boxFrame.setAttribute('allow', 'autoplay; fullscreen');
+  boxFrame.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;border:0;opacity:0;pointer-events:none;z-index:15;background:#000;transition:opacity 1.8s ease';
+  document.body.appendChild(boxFrame);
+}
+addEventListener('message', (e) => { if (e.data && e.data.type === 'boxReady') boxReady = true; });
+function goToBox(opts){
+  if (boxing) return; boxing = true;
+  $('skipBox').classList.remove('on');
+  prefetchBox();
+  const t0 = performance.now();
+  const reveal = () => {
+    if (!boxReady && performance.now() - t0 < 20000){ setTimeout(reveal, 150); return; }
+    try { boxFrame.contentWindow.postMessage({ type: 'go', at: opts.at, pose: opts.pose ? opts.pose() : null }, '*'); boxFrame.contentWindow.focus(); } catch (e) {}
+    if (opts.pose) posing = true;
+    boxFrame.style.opacity = '1'; boxFrame.style.pointerEvents = 'auto';
+    setTimeout(() => { $('ar').style.visibility = 'hidden'; opts.onShown && opts.onShown(); }, 1900);
+  };
+  setTimeout(reveal, 50);
+}
+
+/* =====================================================================
+   RUN: camera first, then the cloud, then the box behind it
+   ===================================================================== */
+let arStarting = false, liveMindar = null;
+const IN_APP = /FBAN|FBAV|Instagram|Line\/|Snapchat|MicroMessenger|WhatsApp|; wv\)/i.test(navigator.userAgent);
+async function startAR(){
+  if (arStarting) return; arStarting = true;
+  $('intro').classList.add('hidden'); $('ar').classList.remove('hidden');
+  $('err').classList.add('hidden'); $('loading').classList.remove('hidden');
+  $('arStage').innerHTML = '';
+  const dataP = loadCloud();
+  dataP.catch(() => {});
+  try {
+    const { MindARThree } = await import('mindar-image-three');
+    if (liveMindar){ try { liveMindar.stop(); } catch (e) {} liveMindar = null; }
+    const mindar = new MindARThree({ container: $('arStage'), imageTargetSrc: 'targets.mind', maxTrack: 1, uiLoading: 'no', uiError: 'no', uiScanning: '#scanning', filterMinCF: .0001, filterBeta: .001 });
+    liveMindar = mindar;
+    const { renderer, scene, camera } = mindar;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    camera.far = 200; camera.updateProjectionMatrix();
+    const anchor = mindar.addAnchor(0);
+    let fx = null, tracking = false, entering = false;
+    anchor.onTargetFound = () => { tracking = true; fx && fx.found(); $('skipBox').classList.remove('on'); };
+    anchor.onTargetLost = () => { tracking = false; fx && fx.lost(); };
+    await mindar.start();                                           // camera first
+    $('loading').classList.add('hidden');
+    const data = await dataP;
+    fx = buildCloudAR(anchor.group, data); if (tracking) fx.found();
+    prefetchBox();
+    setTimeout(() => { if (!entering && (!fx || fx.st.foundAt === null)) $('skipBox').classList.add('on'); }, 20000);
+    const enter = () => {
+      if (entering || !tracking || !fx) return; entering = true;
+      $('skipBox').classList.remove('on');
+      const depth = fx.depth();
+      poseNow = () => {                                                 // the phone camera, as seen from the print
+        anchor.group.updateMatrixWorld(true); camera.updateMatrixWorld(true);
+        const inv = anchor.group.matrixWorld.clone().invert();
+        const p = camera.getWorldPosition(new THREE.Vector3()).applyMatrix4(inv);
+        const q = anchor.group.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(camera.getWorldQuaternion(new THREE.Quaternion()));
+        return { p: p.toArray(), q: q.toArray(), fov: camera.fov, aspect: camera.aspect, depth };
+      };
+      goToBox({ at: fx.meta.name, pose: poseNow, onShown: () => {
+        posing = false; try { boxFrame.contentWindow.postMessage({ type: 'poseEnd' }, '*'); } catch (e) {}
+        renderer.setAnimationLoop(null); try { mindar.stop(); } catch (e) {} } });
+    };
+    renderer.setAnimationLoop(() => {
+      if (fx) fx.update(renderer, camera);
+      renderer.render(scene, camera);
+      if (fx && tracking && !entering && fx.st.foundAt !== null && performance.now() / 1000 - fx.st.foundAt > 1.25) enter();   // seen -> straight into the box
+      if (posing && boxFrame) try { boxFrame.contentWindow.postMessage({ type: 'pose', pose: poseNow() }, '*'); } catch (e) {}
+    });
+  } catch (e) {
+    console.error(e); arStarting = false;
+    $('loading').classList.add('hidden');
+    const n = (e && e.name) || '';
+    $('errMsg').textContent = !isHttps ? 'The camera only starts on an https:// page.'
+      : IN_APP ? 'This app’s built-in browser can’t use the camera. Open the link in Chrome or Safari (menu → Open in browser).'
+      : n === 'NotAllowedError' || n === 'SecurityError' ? 'Camera access is turned off for this site. Tap the icon next to the web address, allow Camera, then tap Try again.'
+      : n === 'NotReadableError' || n === 'AbortError' || n === 'TrackStartError' ? 'The camera is busy. Close other tabs or apps using it, then tap Try again.'
+      : n === 'NotFoundError' || n === 'OverconstrainedError' ? 'No camera was found on this device.'
+      : 'The camera could not start (' + (n || (e && e.message) || 'unknown') + '). Tap Try again.';
+    $('err').classList.remove('hidden');
+  }
+}
+
+$('startBtn').addEventListener('click', startAR);
+$('retryBtn').addEventListener('click', () => startAR());
+addEventListener('pagehide', () => { if (liveMindar){ try { liveMindar.stop(); } catch (e) {} } });
+$('closeBtn').addEventListener('click', () => { location.href = location.pathname; });
+if (document.documentElement.classList.contains('auto')) startAR();
+</script>
+</body>
+</html>

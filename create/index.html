@@ -1,0 +1,784 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#000000">
+<title>Memory Box Studio</title>
+<meta name="description" content="Turn Gaussian splat memories into a memory box: a scannable print that opens a glowing void of your moments.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;1,500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#030505; --panel:#0a1111; --panel2:#0e1716; --ink:#e8fffb; --muted:rgba(232,255,251,.6); --faint:rgba(232,255,251,.38);
+  --line:rgba(160,255,240,.16); --line2:rgba(160,255,240,.3); --fluo:#7ff6e6; --warm:#ffcf8a; --bad:#ff9d8a; --good:#8ff5b0;
+  --display:'Cormorant Garamond',Georgia,serif; --body:'Manrope',system-ui,sans-serif; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 var(--body);-webkit-font-smoothing:antialiased}
+body{background:radial-gradient(70% 50% at 70% 0%, rgba(127,246,230,.07), transparent 70%), var(--bg);min-height:100vh}
+a{color:var(--fluo)}
+button,input,select{font:inherit;color:inherit}
+.hidden{display:none !important}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+header{max-width:1240px;margin:0 auto;padding:36px 20px 8px;display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px}
+.brand{display:flex;align-items:center;gap:14px}
+.brand .orb{width:34px;height:34px;border-radius:50%;background:radial-gradient(circle at 40% 38%, #fff 0 8%, var(--fluo) 22%, rgba(127,246,230,.15) 60%, transparent 72%);box-shadow:0 0 30px rgba(127,246,230,.45)}
+h1{margin:0;font:italic 500 clamp(32px,5vw,46px)/1 var(--display);letter-spacing:.01em}
+header p{margin:6px 0 0;color:var(--muted);max-width:560px}
+
+.wrap{max-width:1240px;margin:0 auto;padding:16px 20px 80px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:24px;align-items:start}
+@media (max-width:980px){.wrap{grid-template-columns:minmax(0,1fr)}}
+
+.step{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:16px;padding:20px;margin-bottom:16px}
+.step h2{margin:0 0 4px;display:flex;align-items:center;gap:10px;font:600 13px/1.2 var(--body);letter-spacing:.16em;text-transform:uppercase}
+.step h2 .n{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;border:1px solid var(--line2);font-size:11px;letter-spacing:0;color:var(--fluo)}
+.step > p.lead{margin:0 0 16px;color:var(--muted);font-size:14px}
+label.f{display:block;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin:14px 0 6px}
+input[type=text],input[type=url],input[type=password],select{width:100%;min-height:44px;padding:10px 12px;border-radius:10px;border:1px solid var(--line2);background:rgba(0,0,0,.35);outline:none}
+input:focus-visible,select:focus-visible{border-color:var(--fluo);box-shadow:0 0 0 3px rgba(127,246,230,.18)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:520px){.two{grid-template-columns:1fr}}
+.hint{font-size:13px;color:var(--muted);margin:8px 0 0}
+.hint code,.url code{font-size:12.5px;background:rgba(127,246,230,.08);border:1px solid var(--line);border-radius:6px;padding:1px 6px;word-break:break-all}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border-radius:999px;border:1px solid var(--line2);background:rgba(255,255,255,.04);cursor:pointer;font-weight:600;font-size:12.5px;letter-spacing:.12em;text-transform:uppercase;text-decoration:none;color:var(--ink)}
+.btn:hover{border-color:var(--fluo)}
+.btn.primary{background:var(--fluo);color:#002;border-color:var(--fluo);box-shadow:0 0 30px -6px rgba(127,246,230,.6)}
+.btn.primary:disabled{opacity:.4;box-shadow:none;cursor:not-allowed}
+.btn:focus-visible{outline:3px solid var(--warm);outline-offset:3px}
+.btn svg{width:16px;height:16px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+
+.drop{position:relative;display:grid;place-items:center;text-align:center;gap:6px;padding:26px 16px;border:1.5px dashed var(--line2);border-radius:14px;background:rgba(127,246,230,.03);cursor:pointer;transition:border-color .2s,background .2s}
+.drop:hover,.drop.over{border-color:var(--fluo);background:rgba(127,246,230,.07)}
+.drop input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.drop strong{font-weight:600}
+.drop span{font-size:13px;color:var(--muted)}
+
+.mems{list-style:none;margin:14px 0 0;padding:0;display:flex;flex-direction:column;gap:8px;counter-reset:m}
+.mem{display:grid;grid-template-columns:auto 64px minmax(0,1fr) auto;gap:12px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:rgba(0,0,0,.25);counter-increment:m}
+.mem::before{content:counter(m);font:600 12px var(--body);color:var(--faint);width:16px;text-align:center}
+.mem .th{width:64px;height:48px;border-radius:6px;object-fit:cover;background:#111;display:block}
+.mem .th.wait{background:linear-gradient(90deg,#0d1514,#17302c,#0d1514);background-size:200% 100%;animation:sh 1.2s linear infinite}
+@keyframes sh{to{background-position:-200% 0}}
+.mem input[type=text]{min-height:36px;padding:6px 10px;font-size:14px}
+.mem .st{font-size:12px;color:var(--faint);margin-top:3px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.mem .st.err{color:var(--bad)}
+.tag{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#002;background:var(--warm);border-radius:999px;padding:2px 8px}
+.ctl{display:flex;gap:4px}
+.ic{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:transparent;cursor:pointer;color:var(--muted)}
+.ic:hover{color:var(--ink);border-color:var(--line2)}
+.ic:disabled{opacity:.3;cursor:default}
+.ic svg{width:15px;height:15px}
+.ic:focus-visible{outline:2px solid var(--warm);outline-offset:2px}
+
+.printpick{display:grid;grid-template-columns:120px minmax(0,1fr);gap:16px;align-items:start}
+.printpick img{width:120px;border-radius:6px;display:block;background:#111;box-shadow:0 0 0 1px var(--line)}
+@media (max-width:520px){.printpick{grid-template-columns:1fr}}
+.seg{display:inline-flex;border:1px solid var(--line2);border-radius:999px;padding:3px;gap:2px;flex-wrap:wrap}
+.seg label{position:relative}
+.seg input{position:absolute;opacity:0}
+.seg span{display:inline-block;padding:7px 14px;border-radius:999px;font-size:13px;cursor:pointer;color:var(--muted)}
+.seg input:checked + span{background:rgba(127,246,230,.16);color:var(--ink)}
+.seg input:focus-visible + span{outline:2px solid var(--warm)}
+.url{margin-top:12px;padding:12px 14px;border-radius:10px;border:1px solid var(--line);background:rgba(0,0,0,.3);font-size:13.5px;color:var(--muted)}
+.url b{color:var(--ink);font-weight:600}
+
+.progress{list-style:none;margin:14px 0 0;padding:0;display:flex;flex-direction:column;gap:8px}
+.progress li{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--faint)}
+.progress li i{width:14px;height:14px;border-radius:50%;border:1.5px solid currentColor;flex:none}
+.progress li.run{color:var(--ink)} .progress li.run i{border-color:var(--fluo);border-top-color:transparent;animation:spin 1s linear infinite}
+.progress li.done{color:var(--muted)} .progress li.done i{background:var(--fluo);border-color:var(--fluo)}
+.progress li.fail{color:var(--bad)} .progress li.fail i{background:var(--bad);border-color:var(--bad)}
+.progress li em{font-style:normal;color:var(--faint);margin-left:auto;font-size:12.5px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.msg{margin:12px 0 0;padding:10px 12px;border-radius:10px;font-size:13.5px;line-height:1.5}
+.msg.bad{border:1px solid rgba(255,157,138,.5);background:rgba(255,157,138,.08);color:#ffd3ca}
+.msg.ok{border:1px solid rgba(143,245,176,.4);background:rgba(143,245,176,.07);color:#d9ffe6}
+.msg.warn{border:1px solid rgba(255,207,138,.45);background:rgba(255,207,138,.07);color:#ffe8c4}
+
+/* right: preview + results */
+.side{position:sticky;top:16px}
+@media (max-width:980px){.side{position:static}}
+.view{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#000}
+.tabs{display:flex;gap:2px;padding:6px;border-bottom:1px solid var(--line);background:var(--panel)}
+.tabs button{flex:1;min-height:38px;border:0;border-radius:10px;background:transparent;cursor:pointer;color:var(--muted);font-size:13px;font-weight:600;letter-spacing:.06em}
+.tabs button[aria-selected=true]{background:rgba(127,246,230,.12);color:var(--ink)}
+.tabs button:focus-visible{outline:2px solid var(--warm)}
+.screen{position:relative;aspect-ratio:4/3;background:#000}
+@media (max-width:620px){.screen{aspect-ratio:3/4}}
+.screen iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.screen .empty{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:24px;color:var(--faint);font-size:14px}
+.screen .empty div{max-width:300px}
+.posterView{position:absolute;inset:0;display:grid;place-items:center;padding:18px;background:radial-gradient(80% 80% at 50% 40%, #13201f, #000)}
+.posterView{container-type:size}
+.pframe{position:relative;width:min(100cqw, calc(100cqh * var(--ar, .75)));aspect-ratio:var(--ar, .75)}
+.posterView img{display:block;width:100%;height:100%;border-radius:2px;box-shadow:0 20px 60px -10px rgba(0,0,0,.9),0 0 0 1px var(--line)}
+.qrmark{position:absolute;border:1.5px dashed var(--warm);border-radius:4px;pointer-events:none}
+.results{margin-top:16px}
+.results .step{margin-bottom:12px}
+.dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.log{margin:12px 0 0;padding:10px 12px;max-height:160px;overflow:auto;border-radius:10px;background:rgba(0,0,0,.4);border:1px solid var(--line);font:12.5px/1.6 ui-monospace,Menlo,Consolas,monospace;color:var(--muted);white-space:pre-wrap}
+.live{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.live img{width:96px;height:96px;background:#fff;border-radius:8px;padding:6px}
+footer{max-width:1240px;margin:0 auto;padding:0 20px 40px;color:var(--faint);font-size:12.5px}
+@media (prefers-reduced-motion: reduce){*{animation:none !important;transition:none !important}}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <div class="brand"><span class="orb" aria-hidden="true"></span><h1>Memory Box Studio</h1></div>
+    <p>Drop in your splat memories, pick the photo for the print, and get a finished memory box: a poster with a hidden QR that opens into a glowing void of your moments.</p>
+  </div>
+  <a class="btn" href="../">See an example box</a>
+</header>
+
+<div class="wrap">
+  <main>
+    <!-- 1 -->
+    <section class="step" aria-labelledby="s1">
+      <h2 id="s1"><span class="n">1</span>Name it</h2>
+      <p class="lead">Who or what is this box for?</p>
+      <label class="f" for="title">Title</label>
+      <input type="text" id="title" maxlength="60" placeholder="Friends, Goa 2025" autocomplete="off">
+      <label class="f" for="subtitle">A line under the title <span style="text-transform:none;letter-spacing:0;font-weight:400">(optional)</span></label>
+      <input type="text" id="subtitle" maxlength="140" placeholder="Point your phone at the print and step inside." autocomplete="off">
+    </section>
+
+    <!-- 2 -->
+    <section class="step" aria-labelledby="s2">
+      <h2 id="s2"><span class="n">2</span>Add memories</h2>
+      <p class="lead">Each memory is a 3D splat <code>.ply</code> made from a photo with Apple SHARP. Add 1 to 12. They play in this order; the first floats highest.</p>
+      <label class="drop" id="drop">
+        <input type="file" id="plyIn" accept=".ply" multiple>
+        <strong>Drop .ply files here</strong>
+        <span>or click to choose. Nothing is uploaded; it all happens in this browser.</span>
+      </label>
+      <ol class="mems" id="mems" aria-label="Memories"></ol>
+      <div class="row" style="margin-top:12px">
+        <label class="f" for="quality" style="margin:0">Detail</label>
+        <select id="quality" style="width:auto;min-height:38px">
+          <option value="160000" selected>Standard (sharp, ~1.9 MB per memory)</option>
+          <option value="110000">Light (faster on old phones)</option>
+        </select>
+      </div>
+    </section>
+
+    <!-- 3 -->
+    <section class="step" aria-labelledby="s3">
+      <h2 id="s3"><span class="n">3</span>The print</h2>
+      <p class="lead">One memory becomes the poster. Scanning it turns the photo into light and opens the box right inside that memory.</p>
+      <div class="printpick">
+        <img id="printThumb" alt="The memory chosen for the print" width="120" height="160">
+        <div>
+          <label class="f" for="printSel" style="margin-top:0">Memory on the print</label>
+          <select id="printSel"></select>
+          <label class="f" for="photoIn">Its original photo (recommended)</label>
+          <input type="file" id="photoIn" accept="image/*">
+          <p class="hint" id="photoHint">Without it, the print uses a render of the splat, which is softer.</p>
+        </div>
+      </div>
+      <div class="two" style="margin-top:6px">
+        <div>
+          <label class="f" for="qrPos">QR position</label>
+          <select id="qrPos"><option value="auto" selected>Find the calmest corner</option><option value="tl">Top left</option><option value="tr">Top right</option><option value="bl">Bottom left</option><option value="br">Bottom right</option></select>
+        </div>
+        <div>
+          <label class="f" for="printW">Print width</label>
+          <select id="printW"><option value="21">21 cm (A4)</option><option value="29.7">29.7 cm (A3)</option><option value="30" selected>30 cm</option><option value="42">42 cm (A2)</option><option value="50">50 cm</option></select>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4 -->
+    <section class="step" aria-labelledby="s4">
+      <h2 id="s4"><span class="n">4</span>Where it will live</h2>
+      <p class="lead">The QR on the print points here, so decide before building.</p>
+      <div class="seg" role="radiogroup" aria-label="Hosting">
+        <label><input type="radio" name="host" value="github" checked><span>GitHub Pages (free)</span></label>
+        <label><input type="radio" name="host" value="custom"><span>My own address</span></label>
+      </div>
+      <div id="ghFields">
+        <div class="two">
+          <div><label class="f" for="ghUser">GitHub username</label><input type="text" id="ghUser" placeholder="yourname" autocomplete="off" spellcheck="false"></div>
+          <div><label class="f" for="ghRepo">Box name (new repository)</label><input type="text" id="ghRepo" placeholder="friends-box" autocomplete="off" spellcheck="false"></div>
+        </div>
+      </div>
+      <div id="customFields" class="hidden">
+        <label class="f" for="customUrl">Public address of the folder</label>
+        <input type="url" id="customUrl" placeholder="https://example.com/our-box/" spellcheck="false">
+      </div>
+      <div class="url" id="urlBox" aria-live="polite">The QR will open <b id="urlOut">…</b></div>
+    </section>
+
+    <!-- 5 -->
+    <section class="step" aria-labelledby="s5">
+      <h2 id="s5"><span class="n">5</span>Build</h2>
+      <p class="lead">Makes the print with its hidden QR (checked by a scanner here first), teaches the camera to recognise it, and packs the box.</p>
+      <button class="btn primary" id="buildBtn" type="button" disabled>Build the memory box</button>
+      <ul class="progress hidden" id="progress">
+        <li data-k="print"><i></i>Print and hidden QR<em></em></li>
+        <li data-k="target"><i></i>Teaching the camera the print<em></em></li>
+        <li data-k="pack"><i></i>Packing the box<em></em></li>
+      </ul>
+      <div id="buildMsg"></div>
+    </section>
+  </main>
+
+  <aside class="side" aria-label="Preview and results">
+    <div class="view">
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tabBox" aria-selected="true" aria-controls="screen">Memory box</button>
+        <button role="tab" id="tabPoster" aria-selected="false" aria-controls="screen">Print</button>
+      </div>
+      <div class="screen" id="screen" role="tabpanel">
+        <div class="empty" id="emptyBox"><div>Add a memory to see your box come alive here.</div></div>
+        <iframe id="boxFrame" class="hidden" title="Memory box preview" allow="autoplay; fullscreen"></iframe>
+        <div class="posterView hidden" id="posterView"><div class="pframe" id="pframe"><img id="posterImg" alt="The print with its hidden QR"><div class="qrmark hidden" id="qrMark"></div></div></div>
+        <div class="empty hidden" id="emptyPoster"><div>The print appears here after you build.</div></div>
+      </div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn" id="replayBtn" type="button" disabled>Replay</button>
+      <span class="hint" style="margin:0">Double click (or tap twice) to move to the next memory.</span>
+    </div>
+
+    <div class="results hidden" id="results">
+      <section class="step" aria-labelledby="r1">
+        <h2 id="r1"><span class="n">✓</span>Your files</h2>
+        <div class="dl" style="margin-top:12px">
+          <button class="btn primary" id="dlZip" type="button">Download box (.zip)</button>
+          <button class="btn" id="dlPdf" type="button">Print (PDF)</button>
+          <button class="btn" id="dlJpg" type="button">Print (JPG)</button>
+        </div>
+        <p class="hint" id="qrInfo"></p>
+      </section>
+      <section class="step" aria-labelledby="r2" id="publishStep">
+        <h2 id="r2"><span class="n">↑</span>Publish to GitHub</h2>
+        <p class="lead" style="margin-bottom:0">Puts the box online at your address in about a minute. You need a GitHub token that can create public repositories: <a href="https://github.com/settings/tokens/new?scopes=public_repo&description=Memory%20Box%20Studio" target="_blank" rel="noopener">make one here</a> (tick <code>public_repo</code>), then paste it below. It is only sent to GitHub and is not saved.</p>
+        <label class="f" for="token">GitHub token</label>
+        <input type="password" id="token" placeholder="ghp_…" autocomplete="off" spellcheck="false">
+        <div class="row" style="margin-top:12px"><button class="btn primary" id="publishBtn" type="button">Publish</button></div>
+        <div class="log hidden" id="pubLog" aria-live="polite"></div>
+        <div id="pubDone"></div>
+      </section>
+      <section class="step hidden" aria-labelledby="r3" id="manualStep">
+        <h2 id="r3"><span class="n">↑</span>Put it online</h2>
+        <p class="lead" style="margin-bottom:0">Unzip and upload every file, keeping the folders, so the box's <code>index.html</code> is served at the address you chose (it must be https for the camera).</p>
+      </section>
+    </div>
+  </aside>
+</div>
+<footer>Memories, prints and tokens never leave this browser, except the files you publish. A published box is a public web page: anyone with the link or the print can open it.</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+const MINDAR_URL = 'https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js';
+const MAX_MEMS = 12;
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
+
+/* ============================== state ============================== */
+const S = { mems: [], printId: null, built: null, seq: 0 };
+const worker = new Worker('convert-worker.js');
+const jobs = new Map();
+worker.onmessage = (e) => { const j = jobs.get(e.data.id); if (j){ jobs.delete(e.data.id); j(e.data); } };
+let queue = Promise.resolve();
+const convertPly = (buf, n) => (queue = queue.then(() => new Promise((res) => { const id = ++S.seq; jobs.set(id, res); worker.postMessage({ id, buf, n, seed: 3 + id }, [buf]); })));
+
+function labelFrom(name){
+  return name.replace(/\.ply$/i, '').replace(/_3d$/i, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40) || 'Memory';
+}
+
+async function addFiles(files){
+  const list = [...files].filter((f) => /\.ply$/i.test(f.name));
+  if (!list.length){ flash('Those were not .ply files. Add the splats Apple SHARP made.', 'bad'); return; }
+  const room = MAX_MEMS - S.mems.length;
+  if (list.length > room) flash('A box holds up to ' + MAX_MEMS + ' memories, so only the first ' + Math.max(0, room) + ' were added.', 'warn');
+  for (const file of list.slice(0, Math.max(0, room))){
+    const m = { id: 'k' + (++S.seq), file, label: labelFrom(file.name), status: 'reading', n: +$('quality').value };
+    S.mems.push(m); if (!S.printId) S.printId = m.id;
+    renderList(); changed();
+    process(m);
+  }
+}
+async function process(m){
+  m.status = 'reading'; renderList();
+  try {
+    const buf = await m.file.arrayBuffer();
+    const out = await convertPly(buf, m.n);
+    if (!S.mems.includes(m)) return;
+    if (!out.ok) throw new Error(out.error);
+    m.meta = out.meta; m.bin = out.bin;
+    const c = document.createElement('canvas'); c.width = out.photo.w; c.height = out.photo.h;
+    c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(out.photo.rgba), out.photo.w, out.photo.h), 0, 0);
+    m.render = c;
+    const t = document.createElement('canvas'), k = 160 / Math.max(c.width, c.height); t.width = Math.round(c.width * k); t.height = Math.round(c.height * k);
+    t.getContext('2d').drawImage(c, 0, 0, t.width, t.height); m.thumb = t.toDataURL('image/jpeg', .85);
+    m.status = 'ready';
+  } catch (e) { m.status = 'error'; m.error = e.message || String(e); }
+  renderList(); changed();
+}
+
+/* ============================== memory list ============================== */
+const ICON = {
+  up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15 6-6 6 6"/></svg>',
+  down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
+  del: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>'
+};
+function renderList(){
+  const ol = $('mems'); ol.innerHTML = '';
+  S.mems.forEach((m, i) => {
+    const li = document.createElement('li'); li.className = 'mem';
+    const st = m.status === 'ready' ? (m.meta.n / 1000).toFixed(0) + 'k points · ' + m.meta.W + '×' + m.meta.H
+      : m.status === 'error' ? m.error : 'Reading the splat…';
+    li.innerHTML = (m.thumb ? '<img class="th" alt="" src="' + m.thumb + '">' : '<div class="th wait" aria-hidden="true"></div>') +
+      '<div><input type="text" aria-label="Name of memory ' + (i + 1) + '" value="' + esc(m.label) + '" maxlength="40">' +
+      '<div class="st' + (m.status === 'error' ? ' err' : '') + '">' + esc(st) + (S.printId === m.id ? ' <span class="tag">On the print</span>' : '') + '</div></div>' +
+      '<div class="ctl"><button class="ic" type="button" data-a="up" aria-label="Move up"' + (i === 0 ? ' disabled' : '') + '>' + ICON.up + '</button>' +
+      '<button class="ic" type="button" data-a="down" aria-label="Move down"' + (i === S.mems.length - 1 ? ' disabled' : '') + '>' + ICON.down + '</button>' +
+      '<button class="ic" type="button" data-a="del" aria-label="Remove ' + esc(m.label) + '">' + ICON.del + '</button></div>';
+    li.querySelector('input').addEventListener('input', (e) => { m.label = e.target.value; renderPrintSel(); stale(); });
+    li.querySelectorAll('.ic').forEach((b) => b.addEventListener('click', () => {
+      const a = b.dataset.a, j = S.mems.indexOf(m);
+      if (a === 'del'){ S.mems.splice(j, 1); if (S.printId === m.id) S.printId = S.mems[0] ? S.mems[0].id : null; }
+      if (a === 'up' && j > 0) [S.mems[j - 1], S.mems[j]] = [S.mems[j], S.mems[j - 1]];
+      if (a === 'down' && j < S.mems.length - 1) [S.mems[j + 1], S.mems[j]] = [S.mems[j], S.mems[j + 1]];
+      renderList(); changed();
+      const again = $('mems').children[S.mems.indexOf(m)]; again && again.querySelector('[data-a=' + a + ']:not(:disabled)')?.focus();
+    }));
+    ol.appendChild(li);
+  });
+  renderPrintSel();
+}
+function renderPrintSel(){
+  const sel = $('printSel'); sel.innerHTML = '';
+  S.mems.forEach((m, i) => { const o = document.createElement('option'); o.value = m.id; o.textContent = (i + 1) + '. ' + (m.label || 'Memory'); sel.appendChild(o); });
+  if (S.printId) sel.value = S.printId;
+  const m = printMem();
+  $('printThumb').src = m && m.photoUrl ? m.photoUrl : m && m.thumb ? m.thumb : 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+  $('photoHint').textContent = !m ? 'Add a memory first.'
+    : m.photo ? 'Using your photo (' + m.photo.naturalWidth + '×' + m.photo.naturalHeight + '). It is trimmed to the splat’s ' + (m.meta ? m.meta.W + '×' + m.meta.H : '') + ' shape.'
+    : 'Without it, the print uses a render of the splat, which is softer. Use the same photo the splat was made from.';
+}
+const printMem = () => S.mems.find((m) => m.id === S.printId) || null;
+
+/* ============================== address ============================== */
+const slug = (s) => s.toLowerCase().trim().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 90);
+function host(){ return document.querySelector('input[name=host]:checked').value; }
+function publicUrl(){
+  if (host() === 'github'){
+    const u = slug($('ghUser').value).replace(/[._]/g, '-'), r = slug($('ghRepo').value);
+    if (!u || !r) return '';
+    return r === u + '.github.io' ? 'https://' + u + '.github.io/' : 'https://' + u + '.github.io/' + r + '/';
+  }
+  let v = $('customUrl').value.trim(); if (!v) return '';
+  try { const x = new URL(v); if (x.protocol !== 'https:') return ''; if (!x.pathname.endsWith('/') && !/\.html?$/.test(x.pathname)) x.pathname += '/'; return x.href; } catch (e) { return ''; }
+}
+function renderUrl(){
+  const u = publicUrl();
+  $('urlOut').textContent = u || (host() === 'custom' ? 'an https:// address you enter' : 'your GitHub username and a box name');
+  $('ghFields').classList.toggle('hidden', host() !== 'github'); $('customFields').classList.toggle('hidden', host() !== 'custom');
+  validate();
+}
+
+/* ============================== preview ============================== */
+let previewTimer = 0;
+function changed(){ stale(); clearTimeout(previewTimer); previewTimer = setTimeout(preview, 600); validate(); }
+function stale(){
+  if (S.built){ S.built = null; $('results').classList.add('hidden'); $('progress').classList.add('hidden'); setMsg('Something changed since the last build. Build again to update the files.', 'warn'); }
+  validate();
+}
+function boxJson(mems){
+  return { title: $('title').value.trim() || 'Memory Box', subtitle: $('subtitle').value.trim() || undefined, ar: 'm' + (mems.findIndex((m) => m.id === S.printId) + 1), made: new Date().toISOString().slice(0, 10),
+    memories: mems.map((m, i) => ({ name: 'm' + (i + 1), label: m.label, file: 'm' + (i + 1) + '.bin', ...m.meta })) };
+}
+function preview(){
+  const ready = S.mems.filter((m) => m.status === 'ready');
+  if (!ready.length){ $('boxFrame').classList.add('hidden'); $('boxFrame').removeAttribute('src'); $('emptyBox').classList.remove('hidden'); $('replayBtn').disabled = true; return; }
+  const files = { 'box.json': JSON.stringify(boxJson(ready)) };
+  ready.forEach((m, i) => { files['m' + (i + 1) + '.bin'] = m.bin; });
+  window.__boxFiles = files;
+  $('emptyBox').classList.add('hidden');
+  if (tab === 'box') $('boxFrame').classList.remove('hidden');
+  $('boxFrame').src = 'player/box.html?v=' + Date.now();
+  $('replayBtn').disabled = false;
+}
+let tab = 'box';
+function setTab(t){
+  tab = t;
+  $('tabBox').setAttribute('aria-selected', t === 'box'); $('tabPoster').setAttribute('aria-selected', t === 'poster');
+  const hasBox = !!$('boxFrame').getAttribute('src');
+  $('boxFrame').classList.toggle('hidden', t !== 'box' || !hasBox); $('emptyBox').classList.toggle('hidden', t !== 'box' || hasBox);
+  $('posterView').classList.toggle('hidden', t !== 'poster' || !S.built); $('emptyPoster').classList.toggle('hidden', t !== 'poster' || !!S.built);
+}
+
+/* ============================== validation ============================== */
+function validate(){
+  const ready = S.mems.filter((m) => m.status === 'ready').length, busy = S.mems.some((m) => m.status === 'reading');
+  const ok = ready > 0 && !busy && !!publicUrl() && printMem() && printMem().status === 'ready';
+  $('buildBtn').disabled = !ok || S.building;
+  $('buildBtn').title = ok ? '' : busy ? 'Still reading memories…' : !ready ? 'Add at least one memory' : !publicUrl() ? 'Fill in where the box will live' : 'Choose a memory for the print';
+  return ok;
+}
+function setMsg(t, kind){ $('buildMsg').innerHTML = t ? '<p class="msg ' + kind + '">' + t + '</p>' : ''; }
+function flash(t, kind){ setMsg(esc(t), kind); }
+
+/* ============================== the print ============================== */
+function loadImage(src){ return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('That image could not be opened.')); i.src = src; }); }
+
+// the photo, trimmed to the splat's own shape (the AR lays the cloud exactly over it)
+function makePosterCanvas(m){
+  const W = m.meta.W, H = m.meta.H, src = m.photo || m.render;
+  const sw = src.naturalWidth || src.width, sh = src.naturalHeight || src.height;
+  const long = Math.min(3600, Math.max(2400, Math.max(sw, sh)));
+  const cw = W >= H ? long : Math.round(long * W / H), ch = W >= H ? Math.round(long * H / W) : long;
+  const c = document.createElement('canvas'); c.width = cw; c.height = ch;
+  const g = c.getContext('2d', { willReadFrequently: true }); g.imageSmoothingQuality = 'high';
+  const a = W / H; let cropW = sw, cropH = sw / a; if (cropH > sh){ cropH = sh; cropW = sh * a; }
+  g.drawImage(src, (sw - cropW) / 2, (sh - cropH) / 2, cropW, cropH, 0, 0, cw, ch);
+  return c;
+}
+
+// fast gaussian (three box blurs)
+function blur(src, w, h, sigma){
+  const boxes = (() => { const n = 3, wi = Math.sqrt(12 * sigma * sigma / n + 1); let wl = Math.floor(wi); if (wl % 2 === 0) wl--; const wu = wl + 2;
+    const mi = Math.round((12 * sigma * sigma - n * wl * wl - 4 * n * wl - 3 * n) / (-4 * wl - 4)); return [0, 1, 2].map((i) => i < mi ? wl : wu); })();
+  let a = Float32Array.from(src), b = new Float32Array(src.length);
+  const pass = (s, d, r, horiz) => {
+    const L = horiz ? w : h, M = horiz ? h : w, st = horiz ? 1 : w, ln = horiz ? w : 1;
+    for (let m = 0; m < M; m++){
+      const base = m * ln; let acc = 0;
+      const at = (k) => s[base + Math.min(L - 1, Math.max(0, k)) * st];
+      for (let k = -r; k <= r; k++) acc += at(k);
+      for (let k = 0; k < L; k++){ d[base + k * st] = acc / (2 * r + 1); acc += at(k + r + 1) - at(k - r); }
+    }
+  };
+  for (const bx of boxes){ const r = (bx - 1) / 2; pass(a, b, r, true); pass(b, a, r, false); }
+  return a;
+}
+
+function qrFor(url){ const q = qrcode(0, 'Q'); q.addData(url); q.make(); return q; }
+function functionMask(n, version){
+  const f = new Uint8Array(n * n), set = (r, c) => { if (r >= 0 && c >= 0 && r < n && c < n) f[r * n + c] = 1; };
+  for (const [r0, c0] of [[0, 0], [0, n - 7], [n - 7, 0]]) for (let r = r0 - 1; r < r0 + 8; r++) for (let c = c0 - 1; c < c0 + 8; c++) set(r, c);
+  for (let k = 0; k < n; k++){ set(6, k); set(k, 6); }
+  if (version >= 2){ const a = n - 7; for (let r = a - 2; r <= a + 2; r++) for (let c = a - 2; c <= a + 2; c++) set(r, c); }
+  return f;
+}
+/* each module's centre takes the LOCAL average brightness, darkened for dark modules, so the scene's own
+   texture can't be mistaken for code; colour is kept and the texture between the dots survives */
+function embedRegion(orig, S0, q, size, { dark, light = 0, dot = .46, calm = 0 }, quiet = 2, soft = .25){
+  const n = q.getModuleCount(), version = (n - 17) / 4, px = size / (n + 2 * quiet);
+  const d = orig.data, N = S0 * S0, lum = new Float32Array(N);
+  for (let i = 0; i < N; i++) lum[i] = (.2126 * d[i * 4] + .7152 * d[i * 4 + 1] + .0722 * d[i * 4 + 2]) / 255;
+  const base = blur(lum, S0, S0, size / 7), Fm = functionMask(n, version);
+  const L0 = Float32Array.from(lum);
+  if (calm > 0){   // soften the scene's own texture under the code, feathered at the edges
+    const sm = blur(lum, S0, S0, Math.max(1, size / 60)), c = (S0 - 1) / 2;
+    for (let y = 0; y < S0; y++) for (let x = 0; x < S0; x++){
+      const k = y * S0 + x, fe = Math.min(1, Math.max(0, (S0 / 2 - Math.max(Math.abs(y - c), Math.abs(x - c))) / (S0 * .08)));
+      lum[k] = lum[k] * (1 - calm * fe) + sm[k] * calm * fe;
+    }
+  }
+  const Wt = new Float32Array(N), T = new Float32Array(N).fill(1);
+  for (let i = -quiet; i < n + quiet; i++) for (let j = -quiet; j < n + quiet; j++){
+    const inside = i >= 0 && j >= 0 && i < n && j < n, isdark = inside && q.isDark(i, j), fn = inside && Fm[i * n + j];
+    const cy = (i + quiet + .5) * px, cx = (j + quiet + .5) * px;
+    const y0 = Math.max(Math.floor(cy - px), 0), y1 = Math.min(Math.floor(cy + px) + 1, S0), x0 = Math.max(Math.floor(cx - px), 0), x1 = Math.min(Math.floor(cx + px) + 1, S0);
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++){
+      let w;
+      if (fn){ const dd = Math.max(Math.abs(y - cy), Math.abs(x - cx)) / (px * .5); w = Math.min(1, Math.max(0, (1.08 - dd) / .16)); }
+      else { const dd = Math.hypot(y - cy, x - cx) / (px * dot); w = Math.min(1, Math.max(0, (1 - dd) / soft)); }
+      const k = y * S0 + x; if (w > Wt[k]){ Wt[k] = w; T[k] = isdark ? 1 - dark : 1 + light; }
+    }
+  }
+  const out = new ImageData(new Uint8ClampedArray(d), S0, S0), o = out.data;
+  for (let k = 0; k < N; k++){
+    if (!Wt[k] && lum[k] === L0[k]) continue;
+    const L = L0[k], nl = lum[k] * (1 - Wt[k]) + base[k] * T[k] * Wt[k], ratio = nl / Math.max(L, 1e-3);
+    let r = d[k * 4] * ratio, g = d[k * 4 + 1] * ratio, b = d[k * 4 + 2] * ratio;
+    const lift = Math.min(1, Math.max(0, nl - (.2126 * r + .7152 * g + .0722 * b) / 255)) * 255;   // very dark pixels can't be brightened by ratio alone
+    o[k * 4] = r + lift; o[k * 4 + 1] = g + lift; o[k * 4 + 2] = b + lift;
+  }
+  return out;
+}
+// a camera's view of the print, read by a real QR decoder
+function mulberry(a){ return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function simulate(poster, rect, close, rnd){
+  let sx = 0, sy = 0, sw = poster.width, sh = poster.height, k;
+  if (close){ const m = rect.s * .55; sx = Math.max(0, rect.x - m); sy = Math.max(0, rect.y - m); sw = Math.min(poster.width - sx, rect.s + 2 * m); sh = Math.min(poster.height - sy, rect.s + 2 * m); k = (170 + rnd() * 140) / rect.s; }
+  else k = (900 + rnd() * 300) / Math.max(poster.width, poster.height);
+  const w = Math.round(sw * k), h = Math.round(sh * k), c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.fillStyle = '#777'; g.fillRect(0, 0, w, h);
+  g.translate(w / 2, h / 2); g.rotate((rnd() - .5) * .14); g.transform(1, (rnd() - .5) * .08, (rnd() - .5) * .08, 1, 0, 0); g.scale(.94, .94); g.translate(-w / 2, -h / 2);
+  g.filter = 'blur(' + (.5 + rnd() * 1.0).toFixed(2) + 'px)';
+  g.drawImage(poster, sx, sy, sw, sh, 0, 0, w, h);
+  const im = g.getImageData(0, 0, w, h), a = im.data, gain = .85 + rnd() * .25, tint = [.94 + rnd() * .12, 1, .94 + rnd() * .12], nz = 4 + rnd() * 5;
+  for (let i = 0; i < a.length; i += 4) for (let ch = 0; ch < 3; ch++) a[i + ch] = a[i + ch] * gain * tint[ch] + (rnd() - .5) * 2 * nz;
+  return im;
+}
+function reads(im, url){ const r = jsQR(im.data, im.width, im.height, { inversionAttempts: 'dontInvert' }); return !!r && r.data === url; }
+async function verify(poster, rect, url, seed){
+  const rnd = mulberry(seed); let c = 0, w = 0;
+  for (let i = 0; i < 8; i++){ if (reads(simulate(poster, rect, true, rnd), url)) c++; else if (i + 1 - c > 1) return { ok: false, c, w }; if (i % 2) await nextFrame(); }
+  if (c < 7) return { ok: false, c, w };
+  for (let i = 0; i < 6; i++){ if (reads(simulate(poster, rect, false, rnd), url)) w++; await nextFrame(); }
+  return { ok: w >= 4, c, w };
+}
+// corners ranked by how well a code can hide there: some texture, mid brightness, away from the people
+function rankCorners(poster, s, margin, focusUV, want){
+  const W = poster.width, H = poster.height;
+  const C = { tl: [margin, margin], tr: [W - s - margin, margin], bl: [margin, H - s - margin], br: [W - s - margin, H - s - margin] };
+  if (want !== 'auto') return [{ name: want, x: C[want][0], y: C[want][1] }];
+  const k = 256 / Math.max(W, H), sm = document.createElement('canvas'); sm.width = Math.round(W * k); sm.height = Math.round(H * k);
+  const g = sm.getContext('2d', { willReadFrequently: true }); g.drawImage(poster, 0, 0, sm.width, sm.height);
+  const d = g.getImageData(0, 0, sm.width, sm.height).data;
+  const out = [];
+  for (const [name, [x, y]] of Object.entries(C)){
+    const x0 = Math.floor(x * k), y0 = Math.floor(y * k), ss = Math.ceil(s * k); let m = 0, q = 0, n = 0;
+    for (let yy = y0; yy < y0 + ss; yy++) for (let xx = x0; xx < x0 + ss; xx++){ const i = (yy * sm.width + xx) * 4, L = (.2126 * d[i] + .7152 * d[i + 1] + .0722 * d[i + 2]) / 255; m += L; q += L * L; n++; }
+    m /= n; const sd = Math.sqrt(Math.max(0, q / n - m * m));
+    const fx = focusUV[0] * W, fy = focusUV[1] * H, near = Math.hypot(fx - (x + s / 2), fy - (y + s / 2)) < s * 1.1 ? 1 : 0;
+    const score = Math.abs(sd - .12) * 3 + Math.abs(m - .55) * .7 + near * 2 + (m < .12 ? 1 : 0) + (name[0] === 'b' ? -.02 : 0);
+    out.push({ name, x, y, score });
+  }
+  return out.sort((a, b) => a.score - b.score);
+}
+async function makePrint(m, url, onStep){
+  const poster = makePosterCanvas(m), W = poster.width, H = poster.height;
+  const g = poster.getContext('2d', { willReadFrequently: true });
+  const q = qrFor(url), n = q.getModuleCount();
+  const s = Math.round(Math.max(Math.min(W, H) * .2, Math.max(W, H) * .15) * (n > 33 ? 1.2 : 1)), margin = Math.round(Math.min(W, H) * .045), S0 = s + 2;
+  const F = m.meta.focus, fu = (F[0] / -F[2] * m.meta.f + m.meta.cx) / m.meta.W, fv = (-F[1] / -F[2] * m.meta.f + m.meta.cy) / m.meta.H;
+  const spots = rankCorners(poster, s, margin, [fu, fv], $('qrPos').value);
+  // try the faint strengths in the best two corners first, then stronger ones in the best corner
+  // from most hidden to most robust
+  const LV = [{ dark: .3 }, { dark: .38, light: .06, dot: .5, calm: .3 }, { dark: .46, light: .1, dot: .55, calm: .6 }, { dark: .56, light: .15, dot: .6, calm: .85 }, { dark: .7, light: .2, dot: .62, calm: 1 }];
+  const plan = [];
+  LV.slice(0, 3).forEach((lv) => spots.forEach((sp) => plan.push([sp, lv])));
+  LV.slice(3).forEach((lv) => spots.slice(0, 2).forEach((sp) => plan.push([sp, lv])));
+  let tries = 0;
+  for (const [sp, lv] of plan){
+    onStep('checking ' + (++tries) + ' of ' + plan.length);
+    const x = Math.round(sp.x), y = Math.round(sp.y), rect = { x, y, s }, orig = g.getImageData(x, y, S0, S0);
+    g.putImageData(embedRegion(orig, S0, q, s, lv), x, y);
+    await nextFrame();
+    const v = await verify(poster, rect, url, 11 + tries);
+    if (v.ok) return { poster, rect, corner: sp.name, level: LV.indexOf(lv) + 1, plate: false, version: (n - 17) / 4, checks: v };
+    g.putImageData(orig, x, y);
+  }
+  // a scanner could not read the hidden code reliably: put it on a small white card instead
+  const x = Math.round(spots[0].x), y = Math.round(spots[0].y), rect = { x, y, s }, spot = spots[0];
+  const pad = Math.round(s * .06), cell = (s - 2 * pad) / n;
+  g.fillStyle = '#fff'; roundRect(g, x, y, s, s, s * .06); g.fill();
+  g.fillStyle = '#0b0d10'; for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) g.fillRect(x + pad + c * cell, y + pad + r * cell, Math.ceil(cell), Math.ceil(cell));
+  const v = await verify(poster, rect, url, 99);
+  return { poster, rect, corner: spot.name, level: 1, plate: true, version: (n - 17) / 4, checks: v };
+}
+function roundRect(g, x, y, w, h, r){ g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+const toBlob = (c, type, q) => new Promise((r) => c.toBlob(r, type, q));
+function scaled(c, long){ const k = long / Math.max(c.width, c.height), o = document.createElement('canvas'); o.width = Math.round(c.width * k); o.height = Math.round(c.height * k); const g = o.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(c, 0, 0, o.width, o.height); return o; }
+
+/* ============================== the AR target ============================== */
+async function compileTarget(blob, onP){
+  if (!(window.MINDAR && window.MINDAR.IMAGE)) await import(MINDAR_URL);
+  const img = await loadImage(URL.createObjectURL(blob));
+  const comp = new window.MINDAR.IMAGE.Compiler();
+  await comp.compileImageTargets([img], (p) => onP(p));
+  return await comp.exportData();
+}
+
+/* ============================== build ============================== */
+function stepState(k, cls, note){ const li = document.querySelector('#progress li[data-k=' + k + ']'); li.className = cls; li.querySelector('em').textContent = note || ''; }
+async function build(){
+  if (!validate()) return;
+  S.building = true; validate(); setMsg('');
+  $('progress').classList.remove('hidden'); ['print', 'target', 'pack'].forEach((k) => stepState(k, ''));
+  $('results').classList.add('hidden');
+  const url = publicUrl(), mems = S.mems.filter((m) => m.status === 'ready'), pm = printMem();
+  try {
+    // 1. the print
+    stepState('print', 'run');
+    const pr = await makePrint(pm, url, (t) => stepState('print', 'run', t));
+    stepState('print', 'done', pr.plate ? 'on a white card' : 'hidden, read ' + pr.checks.c + '/8 close · ' + pr.checks.w + '/6 far');
+    const printJpg = await toBlob(pr.poster, 'image/jpeg', .95);
+    const target = scaled(pr.poster, 1000), targetJpg = await toBlob(target, 'image/jpeg', .92);
+    // 2. the camera learns the print
+    stepState('target', 'run', '0%');
+    const mind = await compileTarget(targetJpg, (p) => stepState('target', 'run', Math.round(p) + '%'));
+    stepState('target', 'done', (mind.byteLength / 1024).toFixed(0) + ' KB');
+    // 3. pack
+    stepState('pack', 'run');
+    const box = boxJson(mems), title = box.title;
+    const [arT, boxT] = await Promise.all([fetch('player/ar.html').then((r) => r.text()), fetch('player/box.html').then((r) => r.text())]);
+    const head = '<title>' + esc(title) + '</title>\n<meta property="og:title" content="' + esc(title) + '">\n<meta property="og:description" content="' + esc(box.subtitle || 'A memory box. Scan the print to step inside.') + '">\n<meta property="og:image" content="' + esc(url + 'poster.jpg') + '">';
+    const files = {
+      'index.html': arT.replace('<title>Memory Box</title>', head),
+      'box/index.html': boxT.replace('<title>Memory Box</title>', '<title>' + esc(title) + '</title>'),
+      'box/box.json': JSON.stringify(box, null, 1),
+      'poster.jpg': targetJpg, 'targets.mind': mind,
+      'qr.svg': qrFor(url).createSvgTag({ cellSize: 4, margin: 2, scalable: true }),
+      'print/poster.jpg': printJpg,
+      '.nojekyll': '',
+      'README.md': readme(box, url, pr)
+    };
+    mems.forEach((m, i) => { files['box/m' + (i + 1) + '.bin'] = m.bin; });
+    const cm = +$('printW').value, hcm = +(cm * pr.poster.height / pr.poster.width).toFixed(2);
+    const pdf = new window.jspdf.jsPDF({ unit: 'cm', format: [cm, hcm], orientation: cm > hcm ? 'landscape' : 'portrait', compress: true });
+    pdf.setProperties({ title: title + ' (print)' });
+    pdf.addImage(new Uint8Array(await printJpg.arrayBuffer()), 'JPEG', 0, 0, cm, hcm);
+    files['print/poster.pdf'] = pdf.output('arraybuffer');
+    const zip = new JSZip(); for (const [k, v] of Object.entries(files)) zip.file(k, v);
+    const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } }, (meta) => stepState('pack', 'run', Math.round(meta.percent) + '%'));
+    stepState('pack', 'done', (zipBlob.size / 1048576).toFixed(1) + ' MB');
+    S.built = { url, files, zipBlob, pr, cm, hcm, title, slug: slug(title) || 'memory-box' };
+    showResults();
+  } catch (e) {
+    console.error(e);
+    const k = ['print', 'target', 'pack'].find((k) => document.querySelector('#progress li[data-k=' + k + ']').className === 'run');
+    if (k) stepState(k, 'fail');
+    setMsg('Building stopped: ' + esc(e.message || String(e)) + (/fetch|import|network/i.test(e.message || '') ? ' Check your internet connection and try again.' : ''), 'bad');
+  }
+  S.building = false; validate();
+}
+function readme(box, url, pr){
+  return '# ' + box.title + '\n\nA memory box made with Memory Box Studio.\n\n**Live at:** ' + url + '\n\n' +
+    '1. Print `print/poster.pdf` (' + $('printW').value + ' cm wide, no scaling, matte paper works best).\n' +
+    '2. Scan the QR on the print with a phone, then point the camera at the print.\n' +
+    '3. The photo turns into its point cloud and opens the memory box inside that memory. Double tap for the next memory.\n\n' +
+    '## Files\n\n- `index.html` scan page (laptops see the print and a link to the box)\n- `targets.mind` what the camera looks for (made from `poster.jpg`)\n' +
+    '- `box/` the memory box: `box.json` plus one `.bin` point cloud per memory\n- `print/` the poster for printing (QR ' + (pr.plate ? 'on a white card' : 'hidden in the photo') + ', ' + pr.corner + ' corner)\n\n' +
+    '## Put it online by hand\n\nUpload every file, keeping the folders, to an https host so that `index.html` is served at ' + url + ' . On GitHub: new public repository, upload the files, then Settings → Pages → Deploy from branch `main`, folder `/`.\n\n' +
+    'The page is public: anyone with the link or the print can open it.\n';
+}
+function showResults(){
+  const b = S.built;
+  $('results').classList.remove('hidden');
+  $('publishStep').classList.toggle('hidden', host() !== 'github'); $('manualStep').classList.toggle('hidden', host() === 'github');
+  $('qrInfo').innerHTML = 'The QR opens <code>' + esc(b.url) + '</code>. ' + (b.pr.plate
+    ? 'The photo was too busy to hide it reliably, so it sits on a small white card.'
+    : 'It is hidden in the ' + ({ tl: 'top left', tr: 'top right', bl: 'bottom left', br: 'bottom right' }[b.pr.corner]) + ' corner at the faintest strength a scanner read every time.') +
+    ' Print at ' + b.cm + ' × ' + b.hcm + ' cm.';
+  $('posterImg').src = URL.createObjectURL(b.files['print/poster.jpg']);
+  $('pframe').style.setProperty('--ar', b.pr.poster.width / b.pr.poster.height);
+  const r = b.pr.rect, mk = $('qrMark');
+  mk.style.left = (r.x / b.pr.poster.width * 100) + '%'; mk.style.top = (r.y / b.pr.poster.height * 100) + '%';
+  mk.style.width = (r.s / b.pr.poster.width * 100) + '%'; mk.style.height = (r.s / b.pr.poster.height * 100) + '%';
+  mk.classList.remove('hidden'); mk.title = 'The hidden QR';
+  $('pubLog').classList.add('hidden'); $('pubLog').textContent = ''; $('pubDone').innerHTML = '';
+  setMsg('Done. Download the files or publish them, then print the poster.', 'ok');
+  setTab('poster');
+}
+function download(blob, name){ const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
+
+/* ============================== publish to GitHub ============================== */
+function b64(buf){ const u = new Uint8Array(buf); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); }
+async function asBytes(v){ if (v instanceof Blob) return new Uint8Array(await v.arrayBuffer()); if (typeof v === 'string') return new TextEncoder().encode(v); return new Uint8Array(v); }
+async function publish(){
+  const b = S.built; if (!b) return;
+  const token = $('token').value.trim(), log = $('pubLog');
+  if (!token){ $('token').focus(); $('pubDone').innerHTML = '<p class="msg bad">Paste a GitHub token first.</p>'; return; }
+  const owner = slug($('ghUser').value).replace(/[._]/g, '-'), repo = slug($('ghRepo').value);
+  log.classList.remove('hidden'); log.textContent = ''; $('pubDone').innerHTML = ''; $('publishBtn').disabled = true;
+  const say = (t) => { log.textContent += t + '\n'; log.scrollTop = log.scrollHeight; };
+  const gh = async (path, opt = {}) => {
+    const r = await fetch('https://api.github.com' + path, { method: opt.method || 'GET', body: opt.body ? JSON.stringify(opt.body) : undefined,
+      headers: { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', ...(opt.body ? { 'Content-Type': 'application/json' } : {}) } });
+    if (opt.ok && opt.ok.includes(r.status)) return { status: r.status, data: r.status === 204 ? null : await r.json().catch(() => null) };
+    if (!r.ok){ const j = await r.json().catch(() => ({})); const e = new Error((j.message || r.statusText) + ' (' + r.status + ')'); e.status = r.status; throw e; }
+    return r.status === 204 ? null : r.json();
+  };
+  try {
+    say('Checking the token…');
+    const me = await gh('/user');
+    if (me.login.toLowerCase() !== owner.toLowerCase()) throw new Error('This token belongs to "' + me.login + '", but the address uses "' + owner + '". Change the username in step 4 and build again, or use ' + owner + '’s token.');
+    let info = await gh('/repos/' + owner + '/' + repo, { ok: [404] });
+    if (info.status === 404){
+      say('Creating the repository ' + owner + '/' + repo + '…');
+      await gh('/user/repos', { method: 'POST', body: { name: repo, description: b.title + ' (a memory box)', homepage: b.url, auto_init: true, private: false, has_issues: false, has_wiki: false, has_projects: false } });
+      for (let i = 0; i < 10; i++){ await wait(1200); info = await gh('/repos/' + owner + '/' + repo, { ok: [404] }); if (info.status !== 404) break; }
+    } else say('Updating the existing repository ' + owner + '/' + repo + '…');
+    const repoInfo = info.data || info;
+    if (repoInfo.private) throw new Error('That repository is private. GitHub Pages on a free account needs a public repository; choose another box name.');
+    const branch = repoInfo.default_branch || 'main';
+    let ref = null;
+    for (let i = 0; i < 10 && !ref; i++){ const r = await gh('/repos/' + owner + '/' + repo + '/git/ref/heads/' + branch, { ok: [404, 409] }); if (r && r.object) ref = r; else await wait(1500); }
+    if (!ref) throw new Error('The new repository is not ready yet. Wait a moment and press Publish again.');
+    const tree = [], names = Object.keys(b.files);
+    for (let i = 0; i < names.length; i++){
+      const name = names[i], bytes = await asBytes(b.files[name]);
+      say('Uploading ' + name + ' (' + (bytes.length / 1048576).toFixed(2) + ' MB) ' + (i + 1) + '/' + names.length);
+      const blob = await gh('/repos/' + owner + '/' + repo + '/git/blobs', { method: 'POST', body: { content: b64(bytes), encoding: 'base64' } });
+      tree.push({ path: name, mode: '100644', type: 'blob', sha: blob.sha });
+    }
+    say('Saving the box…');
+    const t = await gh('/repos/' + owner + '/' + repo + '/git/trees', { method: 'POST', body: { tree } });
+    const c = await gh('/repos/' + owner + '/' + repo + '/git/commits', { method: 'POST', body: { message: 'Memory box: ' + b.title, tree: t.sha, parents: [ref.object.sha] } });
+    await gh('/repos/' + owner + '/' + repo + '/git/refs/heads/' + branch, { method: 'PATCH', body: { sha: c.sha, force: false } });
+    say('Turning on GitHub Pages…');
+    const pg = await gh('/repos/' + owner + '/' + repo + '/pages', { method: 'POST', body: { source: { branch, path: '/' } }, ok: [409, 422] });
+    if (pg && pg.status === 422) say('Pages could not be switched on automatically. Open the repository’s Settings → Pages and choose branch ' + branch + ', folder /.');
+    else if (pg && pg.status === 409) await gh('/repos/' + owner + '/' + repo + '/pages/builds', { method: 'POST', ok: [403, 404, 409] }).catch(() => {});
+    say('Waiting for the site to go live (usually under a minute)…');
+    let live = false;
+    for (let i = 0; i < 60 && !live; i++){
+      await wait(5000);
+      const bd = await gh('/repos/' + owner + '/' + repo + '/pages/builds/latest', { ok: [404] }).catch(() => null);
+      const st = bd && (bd.data ? bd.data.status : bd.status);
+      if (st === 'built') live = true; else if (st === 'errored') throw new Error('GitHub could not build the page. Open the repository’s Actions tab for details.');
+    }
+    $('pubDone').innerHTML = '<div class="msg ok live"><img src="data:image/svg+xml;utf8,' + encodeURIComponent(b.files['qr.svg']) + '" alt="QR for the box"><div><b>' + (live ? 'It’s live' : 'Published') + '.</b> <a href="' + esc(b.url) + '" target="_blank" rel="noopener">' + esc(b.url) + '</a><br>' +
+      (live ? 'Print the poster and scan it.' : 'GitHub is still building it; the link works in a minute or two.') + ' Code: <a href="https://github.com/' + owner + '/' + repo + '" target="_blank" rel="noopener">' + owner + '/' + repo + '</a></div></div>';
+    say(live ? 'Live.' : 'Published; GitHub is still building.');
+  } catch (e) {
+    console.error(e);
+    say('Stopped: ' + e.message);
+    const hint = e.status === 401 ? 'The token was not accepted. Make a new one with the public_repo box ticked.' : e.status === 403 ? 'The token is missing a permission. Make a classic token with public_repo ticked.' : e.message;
+    $('pubDone').innerHTML = '<p class="msg bad">' + esc(hint) + '</p>';
+  }
+  $('publishBtn').disabled = false;
+}
+
+/* ============================== wiring ============================== */
+$('plyIn').addEventListener('change', (e) => { addFiles(e.target.files); e.target.value = ''; });
+const drop = $('drop');
+['dragenter', 'dragover'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', (e) => addFiles(e.dataTransfer.files));
+$('quality').addEventListener('change', () => { const n = +$('quality').value; S.mems.forEach((m) => { if (m.n !== n && m.status !== 'reading'){ m.n = n; m.thumb = m.thumb; process(m); } }); });
+$('printSel').addEventListener('change', (e) => { S.printId = e.target.value; renderList(); changed(); });
+$('photoIn').addEventListener('change', async (e) => {
+  const f = e.target.files[0], m = printMem(); if (!f || !m) return;
+  try { const url = URL.createObjectURL(f); m.photo = await loadImage(url); m.photoUrl = url; } catch (err) { flash(err.message, 'bad'); }
+  e.target.value = ''; renderPrintSel(); stale();
+});
+document.querySelectorAll('input[name=host]').forEach((r) => r.addEventListener('change', () => { renderUrl(); stale(); }));
+['ghUser', 'ghRepo', 'customUrl'].forEach((id) => $(id).addEventListener('input', () => { renderUrl(); stale(); }));
+$('title').addEventListener('input', () => { if (!$('ghRepo').dataset.touched) $('ghRepo').value = slug($('title').value); renderUrl(); stale(); });
+$('ghRepo').addEventListener('input', () => { $('ghRepo').dataset.touched = '1'; });
+$('subtitle').addEventListener('input', stale);
+['qrPos', 'printW'].forEach((id) => $(id).addEventListener('change', stale));
+$('buildBtn').addEventListener('click', build);
+$('replayBtn').addEventListener('click', preview);
+$('tabBox').addEventListener('click', () => setTab('box')); $('tabPoster').addEventListener('click', () => setTab('poster'));
+$('dlZip').addEventListener('click', () => download(S.built.zipBlob, S.built.slug + '-memory-box.zip'));
+$('dlPdf').addEventListener('click', () => download(new Blob([S.built.files['print/poster.pdf']], { type: 'application/pdf' }), S.built.slug + '-print.pdf'));
+$('dlJpg').addEventListener('click', () => download(S.built.files['print/poster.jpg'], S.built.slug + '-print.jpg'));
+$('publishBtn').addEventListener('click', publish);
+renderList(); renderUrl();
+window.__studio = { S, build, publicUrl, addFiles };
+</script>
+</body>
+</html>
