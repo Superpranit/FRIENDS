@@ -1,0 +1,1031 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>Memory Box</title>
+<style>
+/* The whole page is the void. Icons only; no words on screen. */
+:root{ --fluo:#7ff6e6; --line:rgba(200,255,245,.28); }
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#000;color:#e8fffb;overflow:hidden;overscroll-behavior:none;font-family:system-ui,sans-serif}
+#stage{position:fixed;inset:0;touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab}
+#stage:active{cursor:grabbing}
+#stage canvas{display:block;width:100% !important;height:100% !important}
+/* cinema: letterbox bars and an opening fade from black */
+.bar{position:fixed;left:0;right:0;height:var(--bar,7vh);background:#000;z-index:4;pointer-events:none;transition:transform 2.4s cubic-bezier(.2,.7,.2,1)}
+.bar.top{top:0;transform:translateY(-100%)}.bar.bot{bottom:0;transform:translateY(100%)}
+.cine .bar{transform:none}
+#fade{position:fixed;inset:0;background:#000;z-index:6;pointer-events:none;transition:opacity 3.2s ease}
+#fade.out{opacity:0}
+.top{position:fixed;right:0;top:0;z-index:8;padding:calc(var(--bar,7vh) + 10px + env(safe-area-inset-top,0px)) 16px 0}
+.icon-btn{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:rgba(0,0,0,.35);color:#e8fffb;cursor:pointer;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);opacity:.75;transition:opacity .3s}
+.icon-btn:hover{opacity:1}
+.icon-btn svg{width:18px;height:18px}
+.icon-btn:focus-visible{outline:2px solid var(--fluo);outline-offset:3px}
+.hints{position:fixed;left:0;right:0;bottom:calc(30px + env(safe-area-inset-bottom,0px));z-index:5;display:flex;justify-content:center;gap:34px;pointer-events:none;opacity:0;transition:opacity 1.4s}
+.hints.on{opacity:.8}
+.hints svg{width:30px;height:30px;stroke:#e8fffb;fill:none;stroke-width:1.3;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 6px rgba(127,246,230,.6))}
+.fail{position:fixed;inset:0;display:grid;place-items:center;color:#9fb;font-size:14px;padding:24px;text-align:center}
+.note{position:fixed;left:0;right:0;bottom:calc(var(--bar,7vh) + 14px + env(safe-area-inset-bottom,0px));z-index:5;display:flex;flex-direction:column;align-items:center;gap:10px;pointer-events:none;opacity:0;transform:translateY(6px);transition:opacity 1.2s,transform 1.2s}
+.note.on{opacity:1;transform:none}
+.note svg{width:30px;height:30px;stroke:#e8fffb;fill:none;stroke-width:1.3;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 6px rgba(127,246,230,.6))}
+.note svg .ring{animation:tapring 1.6s ease-out infinite;transform-origin:16px 12px}
+.note svg .ring2{animation:tapring 1.6s .22s ease-out infinite;transform-origin:16px 12px}
+@keyframes tapring{0%{opacity:.9;transform:scale(.5)}70%{opacity:0;transform:scale(1.25)}100%{opacity:0}}
+.note span{font:500 11px/1.4 system-ui,sans-serif;letter-spacing:.22em;text-transform:uppercase;color:rgba(232,255,251,.78);text-shadow:0 0 12px rgba(0,0,0,.9)}
+@media (prefers-reduced-motion: reduce){.hints,.note{transition:none}.note svg .ring,.note svg .ring2{animation:none}}
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="stage" role="img" aria-label="Memories of friends floating in a dark void, lit one by one by a glowing light"></div>
+<div class="top">
+  <button id="snd" class="icon-btn" aria-label="Sound" aria-pressed="false">
+    <svg id="sndOff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="m22 9-6 6M16 9l6 6"/></svg>
+    <svg id="sndOn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+  </button>
+</div>
+<div class="hints" id="hints" aria-hidden="true">
+  <!-- drag to look -->
+  <svg viewBox="0 0 32 32"><path d="M8 16h16M8 16l3-3M8 16l3 3M24 16l-3-3M24 16l-3 3"/><circle cx="16" cy="16" r="2.2"/></svg>
+  <!-- tap a memory -->
+  <svg viewBox="0 0 32 32"><circle cx="16" cy="13" r="3"/><circle cx="16" cy="13" r="7.5" opacity=".55"/><path d="M16 21v6"/></svg>
+</div>
+<div class="bar top"></div><div class="bar bot"></div><div id="fade"></div>
+<div class="note" id="note" role="status" aria-live="polite">
+  <svg viewBox="0 0 32 32" aria-hidden="true"><circle class="ring" cx="16" cy="12" r="6"/><circle class="ring2" cx="16" cy="12" r="6"/><circle cx="16" cy="12" r="2.2"/><path d="M16 17v9"/></svg>
+  <span id="noteText">Double tap for the next memory</span>
+</div>
+<noscript><div class="fail">This memory needs JavaScript.</div></noscript>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+const $ = (id) => document.getElementById(id);
+const REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const V3 = THREE.Vector3;
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const seg = (t, a, d) => clamp((t - a) / d, 0, 1);
+const ease = (x) => x * x * (3 - 2 * x);
+const easeIO = (x) => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const easeOut = (x) => 1 - Math.pow(1 - x, 3);
+const now = () => performance.now() / 1000;
+
+/* ===================== the box: everything comes from box.json ===================== */
+// inside the creator's preview, files come from the creator page instead of the network
+const LOCAL = (() => { try { return parent !== window && parent.__boxFiles ? parent.__boxFiles : null; } catch (e) { return null; } })();
+const getFile = (u) => LOCAL && LOCAL[u] ? Promise.resolve(new Response(LOCAL[u])) : fetch(u);
+let BOX;
+try { BOX = await getFile('box.json').then((r) => { if (!r.ok) throw new Error('box.json'); return r.json(); }); }
+catch (e) { document.getElementById('stage').innerHTML = '<div class="fail">This memory box could not be opened.</div>'; throw e; }
+if (BOX.title) document.title = BOX.title;
+document.getElementById('stage').setAttribute('aria-label', (BOX.title ? BOX.title + ': m' : 'M') + 'emories floating in a dark void, lit one by one by a glowing light');
+const N = Math.max(1, BOX.memories.length);
+// where each memory floats: a gentle zig-zag falling away into the dark (oldest highest)
+const LAYOUT = BOX.memories.map((m, i) => {
+  const s = N === 1 ? 0 : (i % 2 ? 1 : -1), w = 1 + .12 * Math.sin(i * 2.3);
+  return { C: [s * 3.75 * w, (N - 1) / 2 * 3.4 - i * 3.4, -1.5 - 4 * i], yaw: -s * .32 * w, pitch: .02 * Math.cos(i * 1.7), roll: -s * .035 * w };
+});
+const SPAN = Math.max(1, (N - 1) / 5);
+
+/* ===================== renderer ===================== */
+const stage = $('stage');
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+} catch (e) {
+  stage.innerHTML = '<div class="fail">This device cannot show 3D right now.</div>';
+  throw e;
+}
+const DPR = Math.min(devicePixelRatio || 1, 1.6);
+renderer.setPixelRatio(DPR);
+renderer.setClearColor(0x000000, 1);
+renderer.toneMapping = THREE.NoToneMapping;
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, 1, .02, 400);
+const FLUO = new THREE.Color(0x6ff7e4);           // the fluorescent light
+const FLUO_LIN = new THREE.Vector3(FLUO.r, FLUO.g, FLUO.b);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), .42, .5, .86);
+composer.addPass(bloom);
+const grade = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uRes: { value: new THREE.Vector2(1, 1) }, uAspect: { value: 1 },
+    uBlob: { value: new THREE.Vector2(.5, .5) }, uBlobV: { value: 0 }, uBlobS: { value: .5 }, uGlass: { value: 1 }, uGradeMix: { value: 1 } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime, uAspect, uBlobV, uBlobS, uGlass, uGradeMix; uniform vec2 uRes, uBlob; varying vec2 vUv;
+    float hh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(hh(i), hh(i + vec2(1.0, 0.0)), f.x), mix(hh(i + vec2(0.0, 1.0)), hh(i + vec2(1.0, 1.0)), f.x), f.y); }
+    float fb(vec2 p){ float s = 0.0, a = .5; for (int i = 0; i < 3; i++){ s += a * vn(p); p = p * 2.07 + vec2(1.7, 9.2); a *= .5; } return s; }
+    vec3 spectrum(float x){ return clamp(vec3(abs(x * 6.0 - 3.0) - 1.0, 2.0 - abs(x * 6.0 - 2.0), 2.0 - abs(x * 6.0 - 4.0)), 0.0, 1.0); }
+    void main(){
+      vec2 uv = vUv, asp = vec2(uAspect, 1.0);
+      float t = uTime * .04;
+      // a sheet of slowly flowing liquid glass in front of everything
+      vec2 q = uv * asp * 1.35;
+      float w1 = fb(q + vec2(t, -t * .6));
+      float w2 = fb(q * 1.25 + vec2(-t * .7, t * .8) + w1 * 2.2);
+      vec2 g = vec2(dFdx(w2), dFdy(w2)) * uRes.y;
+      vec2 off = ((vec2(w1, w2) - .5) * .012 + g * .0008) * uGlass;
+      float ridge = smoothstep(.035, .0, abs(w2 - .55));
+      float disp = (.0015 + ridge * .007) * uGlass;
+      vec2 dir = normalize(g + vec2(1e-4, 0.0));
+      vec3 col = vec3(texture2D(tDiffuse, uv + off + dir * disp).r, texture2D(tDiffuse, uv + off).g, texture2D(tDiffuse, uv + off - dir * disp).b);
+      // rainbow light caught in the glass edges, strongest near the light
+      float near = exp(-length((uv - uBlob) * asp) * 2.4) * uBlobV;
+      float lum = dot(col, vec3(.3, .5, .2));
+      col += spectrum(fract(w1 * 1.7 + uv.x * .4 + t)) * ridge * (lum * .35 + .012 * near) * uGlass;
+      col *= 1.0 + (w2 - .5) * .12 * uGlass;            // the glass is thicker in places
+      // soft light leaks, like light trapped inside a crystal
+      vec2 l1 = vec2(.84 + .08 * sin(t * 2.3), .16 + .07 * cos(t * 1.7)), l2 = vec2(.12 + .06 * cos(t * 1.9), .86 + .05 * sin(t * 2.1));
+      col += vec3(.03, .17, .2) * pow(max(0.0, 1.0 - length((uv - l1) * asp) * 1.8), 4.0) * .12 * uGlass;
+      col += vec3(.06, .08, .2) * pow(max(0.0, 1.0 - length((uv - l2) * asp) * 2.0), 4.0) * .08 * uGlass;
+      if (uBlobV > .01){
+        // shafts of light pouring from the orb through the particles
+        vec2 dd = (uv - uBlob) / 14.0; vec2 s = uv + off; vec3 acc = vec3(0.0); float wt = 1.0;
+        for (int i = 0; i < 14; i++){ s -= dd; acc += max(texture2D(tDiffuse, s).rgb - .75, 0.0) * wt; wt *= .84; }
+        col += acc * .02 * uBlobV * exp(-length((uv - uBlob) * asp) * 2.6);
+        // the lens catches the light: faint prism ghosts
+        vec2 bp = (uv - uBlob) * asp;
+        vec2 axis = vec2(.5) - uBlob;
+        for (int k = 0; k < 3; k++){
+          float fk = float(k); vec2 gp = uBlob + axis * (1.35 + fk * .5); float rk = .028 + fk * .024;
+          float dg = length((uv - gp) * asp);
+          col += spectrum(.35 + fk * .22) * smoothstep(rk, rk * .7, dg) * (.45 + .55 * smoothstep(rk * .5, rk, dg)) * .012 * uBlobV;
+        }
+      }
+      // film grade: teal in the shadows, warm highlights, a soft S-curve
+      float lg = dot(col, vec3(.2126, .7152, .0722));
+      col = mix(col, col * vec3(.82, 1.0, 1.14) + vec3(0.0, .004, .008), smoothstep(.3, .0, lg) * .7);
+      col = mix(col, col * vec3(1.1, 1.0, .86), smoothstep(.25, .9, lg) * .45);
+      vec3 cc = clamp(col, 0.0, 1.0); col = mix(col, cc * cc * (3.0 - 2.0 * cc), .22);
+      col = mix(vec3(dot(col, vec3(.2126, .7152, .0722))), col, 1.08);
+      vec2 d = uv - .5; float r = dot(d, d);
+      col *= 1.0 - r * 1.15;                                  // vignette
+      vec2 px = floor(vUv * uRes) + floor(fract(uTime * 7.13) * 64.0) * vec2(5.588, 3.17);
+      col += (fract(52.9829189 * fract(dot(px, vec2(.06711056, .00583715)))) - .5) * .016;   // film grain
+      col = mix(texture2D(tDiffuse, vUv).rgb, col, uGradeMix);
+      gl_FragColor = vec4(max(col, 0.0), 1.0);
+    }`
+});
+composer.addPass(grade);
+composer.addPass(new OutputPass());
+
+function resize(){
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false); composer.setSize(w, h);
+  bloom.resolution.set(w * DPR / 2, h * DPR / 2);
+  grade.uniforms.uRes.value.set(w * DPR, h * DPR); grade.uniforms.uAspect.value = w / h;
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize); resize();
+
+/* ===================== the void ===================== */
+const NOISE = `
+  float h3(vec3 p){ p = fract(p * .3183099 + .1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+  float n3(vec3 x){ vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(mix(h3(i), h3(i + vec3(1,0,0)), f.x), mix(h3(i + vec3(0,1,0)), h3(i + vec3(1,1,0)), f.x), f.y),
+               mix(mix(h3(i + vec3(0,0,1)), h3(i + vec3(1,0,1)), f.x), mix(h3(i + vec3(0,1,1)), h3(i + vec3(1,1,1)), f.x), f.y), f.z); }
+  float fbm(vec3 p){ float a = .5, s = 0.0; for (int i = 0; i < 4; i++){ s += a * n3(p); p = p * 2.03 + 1.7; a *= .5; } return s; }`;
+
+const timeU = { value: 0 };
+// a faint nebula, almost black, so the dark has depth
+const nebula = new THREE.Mesh(new THREE.SphereGeometry(150, 32, 16), new THREE.ShaderMaterial({
+  uniforms: { uTime: timeU }, side: THREE.BackSide, depthWrite: false,
+  vertexShader: `varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `uniform float uTime; varying vec3 vD; ${NOISE}
+    void main(){ vec3 d = normalize(vD);
+      float n = fbm(d * 2.4 + vec3(uTime * .004, 0.0, -uTime * .003));
+      float m = fbm(d * 5.0 - 3.1);
+      vec3 c = mix(vec3(.0006, .0009, .0025), vec3(.004, .010, .016), smoothstep(.45, .85, n));
+      c += vec3(.006, .002, .012) * smoothstep(.55, .9, m) * .8;
+      gl_FragColor = vec4(c, 1.0); }`
+}));
+scene.add(nebula);
+
+// drifting dust motes everywhere in the void
+const MOTES = 2600;
+{
+  const p = new Float32Array(MOTES * 3), s = new Float32Array(MOTES);
+  for (let i = 0; i < MOTES; i++){ p[i * 3] = (Math.random() - .5) * 70; p[i * 3 + 1] = (Math.random() - .5) * 34 * SPAN; p[i * 3 + 2] = -55 * SPAN + Math.random() * (55 * SPAN + 25); s[i] = Math.random(); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(p, 3)); g.setAttribute('seed', new THREE.BufferAttribute(s, 1));
+  const m = new THREE.Points(g, new THREE.ShaderMaterial({
+    uniforms: { uTime: timeU, uPx: { value: 1 } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    vertexShader: `attribute float seed; uniform float uTime, uPx; varying float vA;
+      void main(){ vec3 q = position; q.y += sin(uTime * .1 + seed * 40.0) * .4; q.x += sin(uTime * .07 + seed * 20.0) * .5;
+        vec4 mv = modelViewMatrix * vec4(q, 1.0);
+        vA = (.25 + .75 * seed) * (.55 + .45 * sin(uTime * (.6 + seed) + seed * 50.0)) * smoothstep(60.0, 8.0, -mv.z);
+        gl_PointSize = clamp(uPx * .035 * (.4 + seed) / -mv.z, 0.0, 4.0); gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `varying float vA; void main(){ vec2 c = gl_PointCoord - .5; float d = dot(c, c); if (d > .25) discard;
+      gl_FragColor = vec4(vec3(.55, .8, .85) * smoothstep(.25, .0, d) * vA * .35, 1.0); }`
+  }));
+  m.frustumCulled = false; m.userData.isMotes = true; scene.add(m); scene.userData.motes = m;
+}
+
+/* ===================== the glowing light ===================== */
+function glowTex(){
+  const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+  const r = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(.18, 'rgba(255,255,255,.75)'); r.addColorStop(.45, 'rgba(255,255,255,.18)'); r.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = r; g.fillRect(0, 0, 128, 128); const t = new THREE.CanvasTexture(c); return t;
+}
+const GLOW = glowTex();
+const sprite = (color, s, o) => { const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW, color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: o }));
+  m.scale.setScalar(s); m.userData.s = s; m.userData.o = o; return m; };
+const blob = new THREE.Group(); scene.add(blob);
+// the light is three glowing bodies held together by their own gravity (a three-body dance)
+const sys = new THREE.Group(); blob.add(sys);
+const BODY_K = .32;                                  // simulation units -> world
+const TB = {
+  // a chaotic but bound start (found by simulating many starts and keeping one that never flies apart)
+  p: [new V3(.8467, .0495, -.1134), new V3(-.3571, .6901, .1439), new V3(-.4897, -.7396, -.0305)],
+  v: [new V3(-.1739, .5582, .0248), new V3(-.3798, -.1019, -.0399), new V3(.5537, -.4563, .015)],
+  a: [new V3(), new V3(), new V3()]
+};
+function tbAccel(){
+  for (let i = 0; i < 3; i++) TB.a[i].copy(TB.p[i]).multiplyScalar(-.06);    // a soft pull to the centre keeps the dance together
+  for (let i = 0; i < 3; i++) for (let j = i + 1; j < 3; j++){
+    const d = TB.p[j].clone().sub(TB.p[i]), r2 = d.lengthSq() + .02, f = 1 / (r2 * Math.sqrt(r2));
+    TB.a[i].addScaledVector(d, f); TB.a[j].addScaledVector(d, -f);
+  }
+}
+tbAccel();
+function tbStep(h){
+  for (let i = 0; i < 3; i++){ TB.v[i].addScaledVector(TB.a[i], h / 2); TB.p[i].addScaledVector(TB.v[i], h); }
+  tbAccel();
+  for (let i = 0; i < 3; i++) TB.v[i].addScaledVector(TB.a[i], h / 2);
+}
+const bodyU = { uTime: timeU, uI: { value: 0 }, uFluo: { value: FLUO_LIN } };
+const bodyMat = new THREE.ShaderMaterial({
+  uniforms: bodyU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; vec4 mv = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+    mv.xy += position.xy * length(modelViewMatrix[0].xyz); gl_Position = projectionMatrix * mv; }`,
+  fragmentShader: `uniform float uTime, uI; uniform vec3 uFluo; varying vec2 vUv;
+    void main(){
+      vec2 p = vUv * 2.0 - 1.0; float r = length(p), R = .26;
+      float sphere = smoothstep(R, R - .025, r);
+      float limb = sqrt(max(0.0, 1.0 - (r / R) * (r / R)));
+      vec3 body = mix(vec3(.45, .85, 1.0), vec3(1.0), pow(limb, .45)) * 1.7;      // white-hot, a blue limb
+      float ou = max(r - R, 0.0);
+      vec3 glow = mix(vec3(.55, .9, 1.0), uFluo, .4) * (exp(-ou * 10.0) * .7 + .012 / (r * r + .012));
+      gl_FragColor = vec4((body * sphere + glow * (1.0 - sphere * .6)) * smoothstep(1.0, .55, r) * uI, 1.0);
+    }`
+});
+// the light is now one soft, liquid blob: milky mint-white with a thin deep-blue rim, always wobbling
+const fluidU = { uTime: timeU, uI: { value: 0 }, uVel: { value: new THREE.Vector2() } };
+const fluid = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMaterial({
+  uniforms: fluidU, transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending,
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; vec4 mv = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+    mv.xy += position.xy * length(modelViewMatrix[0].xyz); gl_Position = projectionMatrix * mv; }`,
+  fragmentShader: `uniform float uTime, uI; uniform vec2 uVel; varying vec2 vUv; ${NOISE}
+    void main(){
+      vec2 p = vUv * 2.0 - 1.0;
+      // it stretches a little along its motion, like a drop
+      float sp = length(uVel); vec2 dir = sp > 1e-4 ? uVel / sp : vec2(1.0, 0.0), nor = vec2(-dir.y, dir.x);
+      float st = min(sp, .3);
+      vec2 q = vec2(dot(p, dir) / (1.0 + st), dot(p, nor) * (1.0 + st * .45));
+      p = q.x * dir + q.y * nor;
+      float r = length(p), a = atan(p.y, p.x);
+      float wob = .06 * sin(2.0 * a + uTime * 1.25) + .045 * sin(3.0 * a - uTime * 1.6 + 1.0) + .025 * sin(5.0 * a + uTime * 2.2)
+                + (fbm(vec3(cos(a) * 1.4, sin(a) * 1.4, uTime * .45)) - .5) * .14;
+      float R = .46 * (1.0 + wob), e = r - R;
+      float inside = smoothstep(.015, -.035, e);
+      vec2 hl = p - vec2(.16, .14);
+      vec3 body = mix(vec3(.42, .92, .7), vec3(.82, 1.0, .9), exp(-dot(hl, hl) * 4.5));
+      body *= .86 + .16 * fbm(vec3(p * 3.0, uTime * .35));
+      float fringe = exp(-pow((e - .03) / .04, 2.0)) * (1.0 - inside);
+      float glow = exp(-max(e, 0.0) * 6.0) * (1.0 - inside);
+      vec3 col = body * inside * .78 + vec3(.04, .12, .95) * fringe * 1.1 + vec3(.2, .75, .6) * glow * .1;
+      gl_FragColor = vec4(col * smoothstep(1.0, .78, r) * uI, 1.0);
+    }`
+}));
+fluid.scale.setScalar(.42); fluid.frustumCulled = false; fluid.renderOrder = 10; blob.add(fluid);
+let blobGrow = 1;
+sys.visible = false;                                   // the three-body dance is retired (kept in code, not drawn)
+const bodies = [0, 1, 2].map(() => { const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), bodyMat); m.scale.setScalar(.46); m.frustumCulled = false; sys.add(m); return m; });
+// each body draws a swirl of light behind it, like matter pulled into a disc
+const TR = 170;
+const trailPos = new Float32Array(3 * TR * 3), trailA = new Float32Array(3 * TR);
+const swirlGeo = new THREE.BufferGeometry();
+swirlGeo.setAttribute('position', new THREE.BufferAttribute(trailPos, 3)); swirlGeo.setAttribute('a', new THREE.BufferAttribute(trailA, 1));
+const tbHist = [[], [], []]; let tbClock = 0, tbSample = 0;
+const pointMat = (sizeK, color) => new THREE.ShaderMaterial({
+  uniforms: { uPx: { value: 1 }, uK: { value: sizeK }, uCol: { value: color } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  vertexShader: `attribute float a; uniform float uPx, uK; varying float vA;
+    void main(){ vA = a; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = clamp(uPx * uK * (.3 + a) / -mv.z, 0.0, 40.0); gl_Position = projectionMatrix * mv; }`,
+  fragmentShader: `uniform vec3 uCol; varying float vA; void main(){ vec2 c = gl_PointCoord - .5; float d = dot(c, c); if (d > .25) discard;
+    gl_FragColor = vec4(uCol * exp(-d * 14.0) * vA, 1.0); }`
+});
+// embers the light sheds as it moves: they drift, float and wink out
+const EMB = 180;
+const embGeo = new THREE.BufferGeometry();
+embGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(EMB * 3), 3));
+embGeo.setAttribute('a', new THREE.BufferAttribute(new Float32Array(EMB), 1));
+const swirlCore = new THREE.Points(swirlGeo, pointMat(.011, new THREE.Vector3(.3, .72, 1.05)));
+const swirlHaze = new THREE.Points(swirlGeo, pointMat(.1, new THREE.Vector3(.03, .15, .32)));
+swirlCore.frustumCulled = swirlHaze.frustumCulled = false; sys.add(swirlHaze, swirlCore);
+const embers = new THREE.Points(embGeo, pointMat(.012, new THREE.Vector3(.75, .85, .8)));
+embers.frustumCulled = false; scene.add(embers);
+const EP = Array.from({ length: EMB }, () => ({ p: new V3(0, 0, 999), v: new V3(), life: 9, max: 1, s: Math.random() }));
+let embAcc = 0, embNext = 0;
+const blobPrev = new V3(), blobVel = new V3();
+// a comet trail behind the light
+const TRAIL = 260;
+const trailGeo = new THREE.BufferGeometry();
+trailGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL * 3), 3));
+trailGeo.setAttribute('a', new THREE.BufferAttribute(new Float32Array(TRAIL), 1));
+const trail = new THREE.Points(trailGeo, pointMat(.007, new THREE.Vector3(.3, .95, .9)));
+trail.frustumCulled = false; scene.add(trail);
+const history = [];
+
+/* ===================== memories ===================== */
+const SCALE = 1.9;                                               // each memory is a little larger than life
+const CENTRE = LAYOUT.reduce((a, l) => a.add(new V3(...l.C)), new V3()).multiplyScalar(1 / LAYOUT.length);
+// the whole box seen from the front: every memory turns (almost) toward this point
+const OVER = { pos: CENTRE.clone().add(new V3(0, 1.2 * SPAN, 22 * SPAN)), look: CENTRE.clone() };
+
+const pointVS = `
+  uniform vec3 uLo, uHi, uWaveC, uRipC, uBlob, uFluo, uSwC;
+  uniform float uSmin, uSmax, uPx, uTime, uLevel, uDust, uWaveR, uWaveA, uRipR, uRipA, uBlobA, uFlat, uPlane, uCardK, uSwirl, uSwirlT, uFocus, uAper, uGain, uKeep, uShed, uClear, uMode, uSizeK, uAR, uArDv, uArS, uArDepth;
+  attribute float aS, aW;
+  varying vec3 vC; varying float vBok; varying float vW;
+  float hsh(vec3 p){ p = fract(p * .3183099 + .1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+  void main(){
+    vec3 p = uLo + position * (uHi - uLo);
+    float h = hsh(position * 613.0), h2 = hsh(position * 271.0 + 3.1), h3 = hsh(position * 997.0 + 7.7);
+    vec3 rnd = vec3(h, h2, h3) - .5;
+    float d = distance(p, uWaveC);
+    float passed = 1.0 - smoothstep(uWaveR - .9, uWaveR, d);          // 1 once the light has reached it
+    // before the light arrives, the memory is loose dust drifting in the dark
+    vec3 drift = vec3(sin(uTime * .21 + h * 40.0), cos(uTime * .17 + h2 * 31.0), sin(uTime * .13 + h3 * 17.0));
+    vec3 scat = normalize(rnd + 1e-4) * (.18 + 1.1 * h2 * h2) + drift * .12;
+    float settle = passed * passed * (3.0 - 2.0 * passed);
+    // resting memories fold into a glowing photograph (projected along the original camera's rays)
+    float kf = uPlane / max(-p.z, .3);
+    vec3 card = vec3(p.xy * kf * uCardK, -uPlane + (p.z + uPlane) * .04);
+    vW = aW;
+    vec3 pr = mix(p, card, uFlat);
+    // the exact shape the AR showed on the print (so the hand-over from the camera is invisible)
+    float kza = uArDv / max(-p.z, .3);
+    vec3 arP = (vec3(p.x * kza, p.y * kza, -(-p.z - 2.0) * uArDepth) - vec3(0.0, 0.0, uArDv)) / uArS;
+    pr = mix(pr, arP, uAR);
+    vec3 q = pr + scat * (1.0 - settle);
+    // the memory is always shedding a few glittering particles into the dark
+    float loose = step(1.0 - uShed, h3) * settle;
+    float life = fract(uTime * (.045 + .07 * h) + h2 * 7.0);
+    vec3 flow = vec3(sin(p.y * 2.1 + uTime * .5 + h * 6.0), cos(p.x * 1.7 - uTime * .4 + h2 * 6.0), sin(p.x * 1.3 + p.y * 1.1 + uTime * .3));
+    q += loose * (vec3(.9, .4, .2) * life * life * 1.9 + flow * life * .4);
+    float lf = mix(1.0, (1.0 - life) * smoothstep(0.0, .1, life) * 1.7, loose);
+    float glint = pow(.5 + .5 * sin(uTime * (1.3 + h2 * 4.0) + h * 70.0), 48.0) * step(.6, h3) * (1.0 - uMode);
+    // the blob parts the particles as it passes and leaves a shimmering wake
+    vec3 bv = q - uBlob; float bdd = length(bv); vec3 bn = bv / max(bdd, 1e-4);
+    float pushK = exp(-bdd * bdd * 36.0) * uBlobA * settle;
+    q += bn * pushK * .075 + normalize(cross(bn, vec3(0.0, 1.0, 0.0)) + 1e-5) * pushK * .045;
+    q += bn * sin(bdd * 36.0 - uTime * 5.0) * exp(-bdd * 6.5) * .007 * uBlobA * settle;
+    vec3 c = pow(color, vec3(2.2));
+    float lum = dot(c, vec3(.2126, .7152, .0722));
+    vec3 dim = (vec3(lum) * .7 + c * .3) * vec3(.45, .75, 1.0) * uDust * (.6 + .4 * sin(uTime * .8 + h * 30.0));
+    vec3 col = mix(dim, c * uLevel, settle);
+    float rim = exp(-pow((d - uWaveR) / .22, 2.0)) * uWaveA;          // the bright front of the light
+    float rip = exp(-pow((d - uRipR) / .2, 2.0)) * uRipA;
+    float bd = distance(q, uBlob);
+    float bl = uBlobA / (1.0 + bd * bd * 9.0);
+    col += c * bl * .9 + uFluo * (rim * (.45 + .5 * h) + rip * .4 + bl * .015 * settle) + vec3(.9, 1.0, .92) * exp(-bd * bd * 110.0) * uBlobA * .22 * settle;
+    // a slow cinematic light sweeping across the memory
+    vec3 sdir = normalize(vec3(.85, .25, .45));
+    float sweep = exp(-pow((dot(p, sdir) - (mod(uTime * .3 + uPlane * 2.0, 7.0) - 3.5)) / .45, 2.0)) * settle;
+    col += c * sweep * .85 + vec3(1.0, .82, .6) * sweep * .045;
+    // fireflies: a few points glow and breathe
+    float ff = step(fract(h * 97.0 + h2 * 13.0), .0035) * settle;
+    float ffp = .5 + .5 * sin(uTime * (.6 + h3 * 1.4) + h * 40.0);
+    col += (c * 1.1 + vec3(.22, .17, .1)) * ff * ffp * 1.3;
+    col *= .975 + .025 * sin(uTime * 1.3 + h * 50.0);
+    col *= aW * lf * (1.0 + glint * (1.6 + bl * 2.5));                // soft edges, shed sparkles, glints that catch the light
+    float swz = 0.0;
+    vec4 wp = modelMatrix * vec4(q, 1.0);
+    float swGone = 0.0;
+    if (uSwirl > .001){
+      // a few of the points leave their photographs and trace one quiet spiral; the rest fade into the dark
+      float sw = clamp(uSwirl * 1.7 - h2 * .7, 0.0, 1.0); sw = sw * sw * (3.0 - 2.0 * sw);
+      float chosen = step(fract(h3 * 53.0 + h * 7.0), .11);            // about one point in nine joins the spiral
+      swGone = (1.0 - chosen) * sw;
+      float r0 = 1.4 + pow(h, .9) * 13.0;
+      float armI = step(.5, fract(h3 * 7.0));
+      float th0 = armI * 3.14159 + 2.1 * log(r0) + (fract(h3 * 31.0) - .5) * (.12 + .012 * r0);
+      float th = th0 + .8 / pow(r0, .7) * uSwirlT;
+      vec3 disc = vec3(cos(th) * r0, (h2 - .5) * (.5 - r0 * .02) + sin(th * 2.0 + uSwirlT * .25) * .06, sin(th) * r0);
+      disc = vec3(disc.x, disc.y * .9 - disc.z * .44, disc.y * .44 + disc.z * .9);
+      wp.xyz = mix(wp.xyz, uSwC + disc, sw);
+      // soft, pale light that keeps a hint of each memory's colour; the arms fade out at their tips
+      float lumS = dot(col, vec3(.2126, .7152, .0722));
+      vec3 pale = mix(col, vec3(lumS) * vec3(.85, 1.0, .97), .45) * (1.5 + .9 * exp(-r0 * .3)) * smoothstep(14.5, 8.5, r0);
+      col = mix(col, pale, sw * chosen) * (1.0 - swGone);
+      swz = sw * chosen;
+    }
+    vec4 mv = viewMatrix * wp;
+    float dist = -mv.z;
+    float sz = exp(uSmin + aS * (uSmax - uSmin)) * mix(.55, 1.0, settle) * (1.0 + rim * .8 + ff * ffp * .9) * mix(1.0, kf * uCardK, uFlat) * mix(1.0, kza / uArS, uAR);
+    float ps = sz * length(modelViewMatrix[0].xyz) * uPx / dist * uSizeK * (1.0 + swz * .35);
+    if (swGone > .985){ vC = vec3(0.0); vBok = 0.0; gl_PointSize = 0.0; gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }    // glitter pass: smaller than the gaps; clear pass: fills them
+    // depth of field: out-of-focus particles open into soft bokeh discs
+    float coc = abs(dist - uFocus) / dist * uAper * uPx;
+    float diam = max(max(ps, coc), 1.5);
+    float bok = smoothstep(ps * 1.6, ps * 3.2, coc);
+    float keep = step(h, uKeep);
+    vBok = bok;
+    if (bok > .5 && keep < .5){ vC = vec3(0.0); gl_PointSize = 0.0; gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }   // only a few become big discs (fast on phones)
+    float energy = ps * ps / (diam * diam) * mix(1.0, 1.0 / uKeep, bok);
+    vC = col * uGain * clamp(energy, 0.0, 1.8) * mix(1.0 - uClear, uClear, uMode);
+    gl_PointSize = clamp(diam, 0.0, 70.0);
+    gl_Position = projectionMatrix * mv;
+  }`;
+const pointFS = `uniform float uMode, uAR; varying vec3 vC; varying float vBok; varying float vW;
+  void main(){
+    float r = length(gl_PointCoord - .5) * 2.0; if (r > 1.0) discard;
+    if (vW < uAR * .45) discard;                                   // at the hand-over the misty edges are clear, like the print
+    if (uMode > .5){ gl_FragColor = vec4(vC * (1.0 - r * r * .2), 1.0); return; }   // clear: a solid, sharp splat
+    float soft = exp(-r * r * 3.2) * 1.9;                                  // a tiny glowing particle
+    float disc = smoothstep(1.0, .84, r) * (.7 + .5 * smoothstep(.55, .95, r));   // a lens bokeh disc with a brighter rim
+    gl_FragColor = vec4(vC * mix(soft, disc, vBok), 1.0);
+  }`;
+
+// inside the AR page, the box waits (drawing nothing) until the AR hands over
+const EMBED = location.hash === '#embed';
+let GO = !EMBED;
+const mems = [];
+const FOCUS_U = { value: 10 }, APER_U = { value: .03 }, SWIRL_U = { value: 0 }, SWIRLT_U = { value: 0 };
+function makeMemory(meta, buf, i){
+  const L = LAYOUT[i % LAYOUT.length];
+  const n = meta.n;
+  const ib16 = new THREE.InterleavedBuffer(new Uint16Array(buf, 0, n * 6), 6);
+  const ib8 = new THREE.InterleavedBuffer(new Uint8Array(buf, 0, n * 12), 12);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.InterleavedBufferAttribute(ib16, 3, 0, true));
+  g.setAttribute('color', new THREE.InterleavedBufferAttribute(ib8, 3, 6, true));
+  g.setAttribute('aS', new THREE.InterleavedBufferAttribute(ib8, 1, 9, true));
+  g.setAttribute('aW', new THREE.InterleavedBufferAttribute(ib8, 1, 10, true));
+  const focus = new V3(...meta.focus);
+  // every resting photo card gets the same area, whatever lens the photo was taken with
+  const plane0 = -meta.focus[2], cw = 2 * plane0 * (meta.W / 2 / meta.f), ch = 2 * plane0 * (meta.H / 2 / meta.f);
+  const cardK = Math.sqrt(1.8 * 1.35 / (cw * ch));
+  const lo = new V3(...meta.lo), hi = new V3(...meta.hi);
+  let R = 0; for (const x of [lo.x, hi.x]) for (const y of [lo.y, hi.y]) for (const z of [lo.z, hi.z]) R = Math.max(R, focus.distanceTo(new V3(x, y, z)));
+  const U = {
+    uLo: { value: lo }, uHi: { value: hi }, uSmin: { value: meta.smin }, uSmax: { value: meta.smax },
+    uPx: { value: 1 }, uTime: timeU, uLevel: { value: 0 }, uDust: { value: 0 }, uFluo: { value: FLUO_LIN },
+    uWaveC: { value: focus.clone() }, uWaveR: { value: 0 }, uWaveA: { value: 0 },
+    uRipC: { value: focus.clone() }, uRipR: { value: 0 }, uRipA: { value: 0 },
+    uBlob: { value: new V3(0, 0, 999) }, uBlobA: { value: 0 }, uFlat: { value: 0 }, uPlane: { value: -meta.focus[2] }, uCardK: { value: cardK }, uSwirl: SWIRL_U, uSwirlT: SWIRLT_U, uSwC: { value: CENTRE }, uAR: { value: 0 }, uArDv: { value: (meta.H / meta.W / 2) / (meta.cy / meta.f) }, uArS: { value: 3.37 }, uArDepth: { value: .14 },
+    uFocus: FOCUS_U, uAper: APER_U, uGain: { value: 1.0 }, uKeep: { value: .14 }, uShed: { value: .07 }, uClear: { value: 0 }, uMode: { value: 0 }, uSizeK: { value: .78 }
+  };
+  const pts = new THREE.Points(g, new THREE.ShaderMaterial({ uniforms: U, vertexShader: pointVS, fragmentShader: pointFS, vertexColors: true,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+  pts.frustumCulled = false; pts.renderOrder = 1;
+  // the same memory, in sharp focus: solid splats that hide what is behind them
+  const clear = new THREE.Points(g, new THREE.ShaderMaterial({ uniforms: { ...U, uMode: { value: 1 }, uSizeK: { value: 1.16 }, uShed: { value: 0 }, uAper: { value: 0 }, uGain: { value: 1.0 } },
+    vertexShader: pointVS, fragmentShader: pointFS, vertexColors: true }));
+  clear.frustumCulled = false; clear.visible = false; pts.add(clear);
+  pts.position.copy(focus).multiplyScalar(-1);          // the people sit at the group's centre
+  const grp = new THREE.Group();
+  grp.position.set(...L.C);
+  grp.lookAt(OVER.pos); grp.rotateZ(L.roll); grp.rotateY(L.yaw * .12); grp.scale.setScalar(SCALE);
+  grp.add(pts); scene.add(grp); grp.updateMatrixWorld(true);
+  const C = grp.position.clone();
+  const view = grp.localToWorld(focus.clone().multiplyScalar(-1));    // where the photo was taken from
+  const hfov = 2 * Math.atan(meta.W / 2 / meta.f), vfov = 2 * Math.atan(meta.H / 2 / meta.f);
+  // the corners of the resting photo card, in the world (the soft edge trims about 15%)
+  const plane = -meta.focus[2], corners = [[.08, .08], [.92, .08], [.08, .92], [.92, .92]].map(([u, v]) =>
+    pts.localToWorld(new V3((u * meta.W - meta.cx) / meta.f * plane * cardK, -(v * meta.H - meta.cy) / meta.f * plane * cardK, -plane)));
+  const m = { i, meta, grp, pts, clear, U, C, view, R, hfov, vfov, n, corners, clearFrom: 0, clearTo: 0, clearT: 0, clearD: 1, revealed: false, level: 0, levelT: 0, waveT: -1, ripT: -1, frac: .4, born: now(), flatFrom: 0, flatTo: 0, flatT: 0, flatD: 1 };
+  g.setDrawRange(0, Math.floor(n * m.frac));
+  mems[i] = m;
+  return m;
+}
+
+async function loadAll(){
+  const box = BOX;
+  // inside the AR, the scanned memory loads first so the box can open the moment the photo is seen
+  const order = box.memories.map((m, i) => i), first = box.memories.findIndex((m) => m.name === box.ar);
+  if (EMBED && first > 0){ order.splice(order.indexOf(first), 1); order.unshift(first); }
+  let told = false;
+  for (const i of order){
+    const meta = box.memories[i];
+    const buf = await getFile(meta.file).then((r) => { if (!r.ok) throw new Error(meta.file); return r.arrayBuffer(); });
+    makeMemory(meta, buf, i);
+    if (EMBED && !told){ told = true; try { parent.postMessage({ type: 'boxReady' }, '*'); } catch (e) {} }
+  }
+  return box.memories.length;
+}
+let COUNT = N;
+loadAll().then((n) => { COUNT = n; if (EMBED) try { parent.postMessage({ type: 'boxReady' }, '*'); } catch (e) {} }).catch((e) => { console.error(e); if (EMBED) try { parent.postMessage({ type: 'boxReady' }, '*'); } catch (er) {} });
+
+/* ===================== sound (made in the browser) ===================== */
+let actx = null, master = null, soundOn = false;
+function audioStart(){
+  if (actx) return;
+  try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
+  master = actx.createGain(); master.gain.value = 0; master.connect(actx.destination);
+  // a low, slowly breathing pad
+  const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 520; lp.Q.value = .5; lp.connect(master);
+  const lfo = actx.createOscillator(), lfoG = actx.createGain(); lfo.frequency.value = .05; lfoG.gain.value = 240; lfo.connect(lfoG); lfoG.connect(lp.frequency); lfo.start();
+  [[55, .05, 'sine'], [82.41, .03, 'triangle'], [110.3, .02, 'sine'], [164.8, .012, 'sine']].forEach(([f, g, type], k) => {
+    const o = actx.createOscillator(), gg = actx.createGain(); o.type = type; o.frequency.value = f; o.detune.value = (k - 1.5) * 4; gg.gain.value = g; o.connect(gg); gg.connect(lp); o.start();
+  });
+  setSound(true);
+}
+function setSound(on){
+  soundOn = on;
+  $('sndOn').style.display = on ? '' : 'none'; $('sndOff').style.display = on ? 'none' : '';
+  $('snd').setAttribute('aria-pressed', on ? 'true' : 'false');
+  if (master) master.gain.setTargetAtTime(on ? .9 : 0, actx.currentTime, .6);
+}
+function noiseBuf(){
+  const len = actx.sampleRate * 2, b = actx.createBuffer(1, len, actx.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1; return b;
+}
+let NB = null;
+function whoosh(dur){
+  if (!actx || !soundOn) return;
+  NB = NB || noiseBuf();
+  const t = actx.currentTime, s = actx.createBufferSource(); s.buffer = NB; s.loop = true;
+  const bp = actx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 2.5;
+  bp.frequency.setValueAtTime(260, t); bp.frequency.exponentialRampToValueAtTime(1500, t + dur * .55); bp.frequency.exponentialRampToValueAtTime(300, t + dur);
+  const g = actx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(.09, t + dur * .5); g.gain.linearRampToValueAtTime(0, t + dur);
+  s.connect(bp); bp.connect(g); g.connect(master); s.start(t); s.stop(t + dur + .1);
+}
+function chime(f0, big){
+  if (!actx || !soundOn) return;
+  const t = actx.currentTime, out = actx.createGain(); out.gain.value = big ? .08 : .05; out.connect(master);
+  const parts = big ? [[1, 1, 3.2], [1.5, .5, 2.6], [2, .35, 2.2], [3.01, .16, 1.4], [4.2, .08, 1.0]] : [[1, 1, 2.2], [2, .3, 1.4], [3.01, .12, 1.0]];
+  parts.forEach(([m, g0, dur], k) => {
+    const o = actx.createOscillator(), g = actx.createGain(); o.type = 'sine'; o.frequency.value = f0 * m;
+    const t0 = t + k * .06; g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(g0, t0 + .012); g.gain.exponentialRampToValueAtTime(.0001, t0 + dur);
+    o.connect(g); g.connect(out); o.start(t0); o.stop(t0 + dur + .1);
+  });
+  if (big){ // a soft swell under the bells
+    const o = actx.createOscillator(), g = actx.createGain(); o.type = 'triangle'; o.frequency.value = f0 / 4;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(.05, t + 1.4); g.gain.exponentialRampToValueAtTime(.0001, t + 6);
+    o.connect(g); g.connect(master); o.start(t); o.stop(t + 6.1);
+  }
+}
+$('snd').addEventListener('click', (e) => { e.stopPropagation(); if (!actx){ audioStart(); return; } setSound(!soundOn); });
+
+/* ===================== the journey ===================== */
+const NOTES = [440.0, 493.88, 523.25, 587.33, 659.25, 783.99];
+const INTRO = REDUCE ? 2 : 4.6, HOLD = REDUCE ? 7 : 10, REVISIT = REDUCE ? 5 : 7.5, FINALE = REDUCE ? 8 : 15, WAVE = REDUCE ? 2.2 : 3.6;
+const S = { mode: 'intro', t0: now(), idx: -1, queue: null, cycle: 0 };
+const look = OVER.look.clone();
+camera.position.copy(OVER.pos).add(new V3(0, 1.5, 9));
+camera.fov = overFov(); camera.updateProjectionMatrix();
+camera.lookAt(look);
+blob.position.copy(CENTRE).add(new V3(0, .2, 2));
+const blobStart = blob.position.clone();
+
+function overFov(){
+  // widest angle any memory needs, seen from the overview point (near ones look bigger)
+  const fwd = OVER.look.clone().sub(OVER.pos).normalize(), right = new V3().crossVectors(fwd, new V3(0, 1, 0)).normalize(), upv = new V3().crossVectors(right, fwd);
+  let th = 0, tv = 0;
+  const loaded = mems.filter(Boolean);
+  if (loaded.length) for (const m of loaded) for (const c of m.corners){ const d = c.clone().sub(OVER.pos), z = d.dot(fwd);
+    th = Math.max(th, Math.abs(d.dot(right)) / z); tv = Math.max(tv, Math.abs(d.dot(upv)) / z); }
+  else for (const l of LAYOUT){ const d = new V3(...l.C).sub(OVER.pos), z = d.dot(fwd), r = 2.0 * SCALE;
+    th = Math.max(th, (Math.abs(d.dot(right)) + r) / z); tv = Math.max(tv, (Math.abs(d.dot(upv)) + r * .75) / z); }
+  const vf = 2 * Math.atan(Math.max(tv, th / camera.aspect) * 1.2) * 1.12;
+  return clamp(THREE.MathUtils.radToDeg(vf), 34, 82);
+}
+function memFov(m){
+  const hf = m.hfov * 1.2;
+  let vf = 2 * Math.atan(Math.tan(hf / 2) / camera.aspect);
+  vf = clamp(vf, m.vfov * 1.32, THREE.MathUtils.degToRad(70));
+  return THREE.MathUtils.radToDeg(vf);
+}
+
+function setClear(m, to, d, delay = 0){ m.clearFrom = m.U.uClear.value; m.clearTo = to; m.clearT = now() + delay; m.clearD = d; }
+// arriving from the AR: start in the very memory you scanned, already assembled, and glide into it
+const AR = { pose: null, live: false };
+function arPoseWorld(m, pose){
+  // poster space -> this memory's own space (the same similarity the AR page uses) -> the box world
+  const dv = m.U.uArDv.value, sAR = m.U.uArS.value;
+  m.pts.updateMatrixWorld(true);
+  const pos = m.pts.localToWorld(new V3(pose.p[0], pose.p[1], pose.p[2] - dv).divideScalar(sAR));
+  const q = m.pts.getWorldQuaternion(new THREE.Quaternion()).multiply(new THREE.Quaternion(...pose.q));
+  return { pos, q, fov: pose.fov, aspect: pose.aspect };
+}
+function diveFromAR(i, pose){
+  diveInto(i);
+  const m = mems[i];
+  AR.pose = pose; AR.live = true; S.arT = now();
+  m.U.uAR.value = 1; m.U.uArDepth.value = pose.depth;
+  grade.uniforms.uGradeMix.value = 0; bloom.strength = 0;
+}
+function diveInto(i){
+  const m = mems[i];
+  m.revealed = true; m.waveT = .001; m.frac = 1; m.pts.geometry.setDrawRange(0, m.n);
+  m.U.uLevel.value = 1; m.levelT = 0; m.U.uFlat.value = 0; m.flatT = 0; m.U.uClear.value = 1; m.clearT = 0;
+  const dir = m.C.clone().sub(m.view).normalize();
+  S.mode = 'dive'; S.idx = i; S.t0 = now(); S.queue = null;
+  S.diveFrom = m.view.clone().addScaledVector(dir, -2.4 * SCALE);
+  camera.position.copy(S.diveFrom); look.copy(m.C).addScaledVector(new V3(0, 1, 0), .22 * SCALE);
+  camera.fov = memFov(m) * .85; camera.updateProjectionMatrix();
+  blob.position.copy(m.C).add(new V3(0, .45 * SCALE, .3 * SCALE));
+}
+function setFlat(m, to, d){ m.flatFrom = m.U.uFlat.value; m.flatTo = to; m.flatT = now(); m.flatD = d; }
+function startTravel(i){
+  const m = mems[i]; if (!m) return false;
+  const prev = mems[S.idx];
+  if (prev && prev !== m){ prev.levelFrom = prev.U.uLevel.value; prev.levelTo = .5; prev.levelT = now(); setFlat(prev, .92, 5); setClear(prev, 0, 2.2); }
+  S.mode = 'travel'; S.t0 = now(); S.idx = i; S.queue = null;
+  const P0 = blob.position.clone();
+  const dirIn = m.C.clone().sub(m.view).normalize();
+  const up = new V3(0, 1, 0);
+  const side = new V3().crossVectors(dirIn, up).normalize();
+  const approach = m.C.clone().addScaledVector(dirIn, -1.8 * SCALE).addScaledVector(up, .35 * SCALE);
+  const midP = P0.clone().lerp(approach, .5).addScaledVector(up, 2 + Math.random() * 1.6).addScaledVector(side, (Math.random() - .5) * 5);
+  S.blobCurve = new THREE.CatmullRomCurve3([P0, midP, approach, m.C.clone()], false, 'centripetal');
+  const Q0 = camera.position.clone();
+  const camMid = midP.clone().addScaledVector(dirIn, -4.5).addScaledVector(up, 1.2);
+  const camApp = m.view.clone().addScaledVector(dirIn, -1.6 * SCALE).addScaledVector(up, .25 * SCALE);
+  S.camCurve = new THREE.CatmullRomCurve3([Q0, camMid, camApp, m.view.clone()], false, 'centripetal');
+  S.look0 = look.clone(); S.fov0 = camera.fov; S.fov1 = memFov(m);
+  S.dur = REDUCE ? 3 : clamp(P0.distanceTo(m.C) * .3, 4.4, 7.2);
+  S.bank = Math.sign(midP.clone().sub(P0).dot(side) || 1) * (REDUCE ? 0 : .07);
+  ctl.yaw *= .3; ctl.pitch *= .3;
+  whoosh(S.dur);
+  return true;
+}
+function arrive(){
+  const m = mems[S.idx];
+  S.mode = 'hold'; S.t0 = now();
+  if (!m.revealed){ m.revealed = true; m.waveT = now(); m.frac = 1; m.pts.geometry.setDrawRange(0, m.n); chime(NOTES[S.idx % NOTES.length], true); }
+  else { m.ripT = now(); chime(NOTES[S.idx % NOTES.length] * 2, false); }
+  m.levelFrom = m.U.uLevel.value; m.levelTo = 1; m.levelT = now(); setFlat(m, 0, 1.6);
+  setClear(m, 1, REDUCE ? 1.5 : 3.2, m.waveT > 0 && now() - m.waveT < 1 ? 1.2 : .4);      // focus pulls from glitter to a sharp memory
+}
+function startFinale(){
+  const prev = mems[S.idx];
+  S.mode = 'finale'; S.t0 = now(); S.idx = -1;
+  S.camCurve = new THREE.CatmullRomCurve3([camera.position.clone(), camera.position.clone().lerp(OVER.pos, .5).add(new V3(0, 2.5, 4)), OVER.pos.clone()], false, 'centripetal');
+  S.look0 = look.clone(); S.fov0 = camera.fov;
+  S.blob0 = blob.position.clone();
+  for (const m of mems) if (m){ m.levelFrom = m.U.uLevel.value; m.levelTo = m.revealed ? .9 : 0; m.levelT = now(); if (m.revealed) setFlat(m, .92, 4); setClear(m, 0, 2); }
+  whoosh(4);
+}
+// the galaxy: every memory dissolves into one slow swirl
+const SWIRL = { from: 0, to: 0, t: 0, d: 1 };
+function setSwirl(to, d){ SWIRL.from = SWIRL_U.value; SWIRL.to = to; SWIRL.t = now(); SWIRL.d = d; }
+function swirlView(){
+  const D = clamp(13 / (Math.tan(THREE.MathUtils.degToRad(29)) * Math.min(camera.aspect, 1.2)), 18, 46);
+  return CENTRE.clone().add(new V3(0, D * .42, D * .9));
+}
+function startSwirl(){
+  const prev = mems[S.idx];
+  if (prev){ prev.levelFrom = prev.U.uLevel.value; prev.levelTo = .5; prev.levelT = now(); }
+  S.mode = 'swirl'; S.t0 = now(); S.idx = -1; S.queue = null;
+  S.camCurve = new THREE.CatmullRomCurve3([camera.position.clone(), camera.position.clone().lerp(swirlView(), .5).add(new V3(0, 3, 6)), swirlView()], false, 'centripetal');
+  S.look0 = look.clone(); S.blob0 = blob.position.clone();
+  for (const m of mems) if (m){ m.levelFrom = m.U.uLevel.value; m.levelTo = 1.35; m.levelT = now(); setFlat(m, 0, 3); setClear(m, 0, 1.6); m.pts.geometry.setDrawRange(0, m.n); }
+  setSwirl(1, REDUCE ? 4 : 11);
+  whoosh(7); chime(220, true);
+  ctl.yaw *= .2; ctl.pitch *= .2;
+}
+function endSwirl(){
+  S.mode = 'gather'; S.t0 = now(); S.gatherPos = camera.position.clone(); ctl.yaw = 0; ctl.pitch = 0;
+  for (const m of mems) if (m){ setFlat(m, .92, 4); m.levelFrom = m.U.uLevel.value; m.levelTo = .5; m.levelT = now(); }
+  setSwirl(0, REDUCE ? 3 : 6);
+  chime(330, true);
+}
+function doubleTap(){
+  if (!S.noted){ S.noted = true; }
+  $('note').classList.remove('on'); S.noteOn = false;
+  const n = mems.filter(Boolean).length;
+  if (S.mode === 'hold'){
+    if (S.idx + 1 < COUNT){ if (mems[S.idx + 1]) startTravel(S.idx + 1); }   // (still loading? the next double tap will go)
+    else if (n >= COUNT) startSwirl();
+  } else if (S.mode === 'intro'){ if (mems[0]) startTravel(0); }
+  else if (S.mode === 'swirl' && now() - S.t0 > 2.5){ endSwirl(); }
+}
+function goTo(i){
+  if (i === S.idx && S.mode === 'hold'){ const m = mems[i]; m.ripT = now(); chime(NOTES[i % NOTES.length] * 1.5, false); return; }
+  if (S.mode === 'hold' && now() - S.t0 < 1.2){ S.queue = i; return; }
+  startTravel(i);
+}
+
+/* ===================== touch: look, zoom, tap ===================== */
+const ctl = { yaw: 0, pitch: 0, zoom: 1, lastInput: -99 };
+const ptrs = new Map(); let downAt = null, moved = 0, pinch0 = 0, zoom0 = 1;
+stage.addEventListener('pointerdown', (e) => {
+  audioStart();
+  stage.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (ptrs.size === 1){ downAt = { x: e.clientX, y: e.clientY, t: now() }; moved = 0; }
+  if (ptrs.size === 2){ const [a, b] = [...ptrs.values()]; pinch0 = Math.hypot(a.x - b.x, a.y - b.y); zoom0 = ctl.zoom; }
+});
+stage.addEventListener('pointermove', (e) => {
+  const p = ptrs.get(e.pointerId); if (!p) return;
+  const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+  if (ptrs.size === 1){
+    moved += Math.abs(dx) + Math.abs(dy);
+    const k = 2.4 / Math.min(innerWidth, innerHeight);
+    ctl.yaw -= dx * k; ctl.pitch += dy * k * .7; ctl.lastInput = now();
+  } else if (ptrs.size === 2){
+    const [a, b] = [...ptrs.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y);
+    if (pinch0 > 0) ctl.zoom = clamp(zoom0 * pinch0 / d, .6, 1.35); ctl.lastInput = now(); moved += 99;
+  }
+});
+const endPtr = (e) => {
+  ptrs.delete(e.pointerId);
+  if (ptrs.size === 0 && downAt && moved < 12 && now() - downAt.t < .5) handleTap(e.clientX, e.clientY, e.timeStamp / 1000);
+  if (ptrs.size === 0) downAt = null;
+};
+stage.addEventListener('pointerup', endPtr); stage.addEventListener('pointercancel', endPtr);
+stage.addEventListener('wheel', (e) => { e.preventDefault(); ctl.zoom = clamp(ctl.zoom * (1 + e.deltaY * .0012), .6, 1.35); ctl.lastInput = now(); }, { passive: false });
+addEventListener('keydown', (e) => { if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'Enter'){ e.preventDefault(); doubleTap(); } });
+
+let lastTap = null, tapTimer = 0;
+function handleTap(x, y, ts = now()){
+  if (lastTap && ts - lastTap.t < .36 && Math.hypot(x - lastTap.x, y - lastTap.y) < 60){
+    clearTimeout(tapTimer); lastTap = null; doubleTap(); return;
+  }
+  lastTap = { x, y, t: ts };
+  tapTimer = setTimeout(() => { lastTap = null; if (S.mode !== 'swirl' && S.mode !== 'gather') tap(x, y); }, 340);
+}
+function tap(x, y){
+  const v = new V3(); let best = -1, bd = 1e9;
+  for (const m of mems){ if (!m) continue;
+    v.copy(m.C).project(camera); if (v.z > 1) continue;
+    const sx = (v.x * .5 + .5) * innerWidth, sy = (-v.y * .5 + .5) * innerHeight;
+    const d = Math.hypot(sx - x, sy - y); if (d < bd){ bd = d; best = m.i; } }
+  if (best >= 0 && bd < Math.max(innerWidth, innerHeight) * .32) goTo(best);
+}
+
+/* ===================== frame loop ===================== */
+const tmp = new V3(), tmp2 = new V3(), offs = new V3(), qy = new THREE.Quaternion(), qx = new THREE.Quaternion(), X = new V3(1, 0, 0), Y = new V3(0, 1, 0);
+let last = now();
+function frame(){
+  requestAnimationFrame(frame);
+  if (!GO){ last = now(); return; }
+  const t = now(), dt = Math.min(.05, t - last); last = t;
+  timeU.value = t; grade.uniforms.uTime.value = t;
+  const px = camera.projectionMatrix.elements[5] * renderer.domElement.height * .5;
+  scene.userData.motes.material.uniforms.uPx.value = px;
+  trail.material.uniforms.uPx.value = px;
+
+  // user look-around eases back when left alone
+  const idle = t - ctl.lastInput > 2.5;
+  const LIM = S.mode === 'finale' || S.mode === 'intro' || S.mode === 'swirl' ? { y: 1.1, p: .45 } : { y: .32, p: .16 };
+  ctl.yaw = clamp(ctl.yaw, -LIM.y, LIM.y); ctl.pitch = clamp(ctl.pitch, -LIM.p, LIM.p);
+  if (idle){ ctl.yaw *= 1 - dt * .5; ctl.pitch *= 1 - dt * .5; ctl.zoom += (1 - ctl.zoom) * dt * .4; }
+
+  const el = t - S.t0;
+  let fov = camera.fov;
+  const basePos = new V3();
+  if (S.mode === 'intro'){
+    // the light is born in the dark
+    const k = easeOut(seg(el, 0, INTRO));
+    basePos.copy(OVER.pos).add(new V3(0, 1.5, 9).multiplyScalar(1 - k));
+    look.copy(OVER.look).lerp(blobStart, .25 * k);
+    blob.position.copy(blobStart).add(new V3(0, Math.sin(t * .8) * .08, 0));
+    fov += (overFov() - fov) * Math.min(1, dt * 2);
+    if (el > INTRO && mems[0]) startTravel(0);
+  } else if (S.mode === 'dive' && AR.pose){
+    // 1) while the AR fades away, this camera IS the phone's camera; 2) then it glides to the memory's own view
+    const m = mems[S.idx];
+    const w = arPoseWorld(m, AR.pose);
+    if (AR.live){ S.arFrom = w; S.t0 = t; }
+    const k = AR.live ? 0 : easeIO(seg(t - S.t0, 0, REDUCE ? 1.8 : 3.6));
+    const lookAt = m.C.clone().addScaledVector(Y, .22 * SCALE);
+    const qEnd = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(m.view, lookAt, Y));
+    camera.position.copy(S.arFrom.pos).lerp(m.view, k);
+    camera.quaternion.copy(S.arFrom.q).slerp(qEnd, k);
+    camera.fov = S.arFrom.fov + (memFov(m) - S.arFrom.fov) * k; camera.aspect = S.arFrom.aspect + (innerWidth / innerHeight - S.arFrom.aspect) * k; camera.updateProjectionMatrix();
+    fov = camera.fov; look.copy(lookAt);
+    m.U.uAR.value = 1 - easeIO(seg(k, .05, .8));                  // the flat AR picture inflates into the full 3D memory
+    grade.uniforms.uGradeMix.value = easeIO(seg(k, .2, .8)); bloom.strength = .42 * grade.uniforms.uGradeMix.value;
+    if (k > .55 && !document.body.classList.contains('cine')) document.body.classList.add('cine');
+    S.manualCam = true;
+    if (k >= 1){ AR.pose = null; m.U.uAR.value = 0; grade.uniforms.uGradeMix.value = 1; bloom.strength = .42; S.manualCam = false; arrive(); }
+  } else if (S.mode === 'dive'){
+    const m = mems[S.idx], k = easeIO(seg(el, 0, REDUCE ? 1.5 : 3.4));
+    basePos.copy(S.diveFrom).lerp(m.view, k);
+    look.copy(m.C).addScaledVector(Y, .22 * SCALE);
+    fov += (memFov(m) - fov) * Math.min(1, dt * 1.5);
+    if (k >= 1) arrive();
+  } else if (S.mode === 'travel'){
+    const m = mems[S.idx], k = clamp(el / S.dur, 0, 1);
+    const kb = easeIO(k), kc = ease(ease(k) * .85 + k * .15);
+    blob.position.copy(S.blobCurve.getPoint(kb));
+    basePos.copy(S.camCurve.getPoint(kc));
+    tmp.copy(S.look0).lerp(blob.position, ease(seg(k, 0, .3)));
+    look.copy(tmp).lerp(m.C, ease(seg(k, .55, .45)));
+    fov = S.fov0 + (Math.max(S.fov1, 46) - S.fov0) * ease(seg(k, 0, .4));
+    fov += (S.fov1 - fov) * ease(seg(k, .6, .4));
+    if (k >= 1) arrive();
+  } else if (S.mode === 'hold'){
+    const m = mems[S.idx];
+    const dur = m.waveT > 0 && t - m.waveT < HOLD + 1 ? HOLD : REVISIT;
+    // a slow push in toward the friends, breathing a little
+    const k = easeOut(seg(el, 0, dur));
+    basePos.copy(m.view).lerp(m.C, .1 * k);
+    tmp.subVectors(m.C, m.view).normalize(); tmp2.crossVectors(tmp, Y).normalize();
+    basePos.addScaledVector(tmp2, Math.sin(t * .27) * .05 * SCALE).addScaledVector(Y, Math.sin(t * .21) * .03 * SCALE);
+    look.copy(m.C).addScaledVector(Y, .22 * SCALE);          // friends sit in the lower third, the light above them
+    fov += (memFov(m) - fov) * Math.min(1, dt * 2);
+    // the light wanders among them
+    const a = el * .5, amp = ease(seg(el, .4, 2.2));
+    const span = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * Math.min(camera.aspect, 1) * m.view.distanceTo(m.C) * .55;   // stay inside the frame
+    offs.set(Math.sin(a) * span, (.18 + Math.sin(a * .7) * .2) * SCALE, (.1 + Math.cos(a) * .15) * SCALE).multiplyScalar(amp).applyQuaternion(m.grp.quaternion);   // weaves through the cloud
+    blob.position.copy(m.C).add(offs);
+    if (S.queue !== null && el > 1.2) startTravel(S.queue);
+    // stay with this memory until the viewer double-taps
+    if (!S.noted && el > 3.6 && !S.noteOn){ S.noteOn = true; $('noteText').textContent = 'Double tap for the next memory'; $('note').classList.add('on'); }
+  } else if (S.mode === 'swirl' || S.mode === 'gather'){
+    // pull far back and watch every point drift into one slow galaxy
+    const k = clamp(el / 6, 0, 1);
+    if (S.mode === 'swirl'){
+      basePos.copy(S.camCurve.getPoint(easeIO(k)));
+      offs.subVectors(basePos, CENTRE).applyAxisAngle(Y, el * .03 * ease(seg(el, 3, 6))).multiplyScalar(1 - .14 * ease(seg(el, 6, 40)));
+      basePos.copy(CENTRE).add(offs);
+      look.copy(S.look0).lerp(CENTRE, ease(k));
+      fov += (58 - fov) * Math.min(1, dt * 1.2);
+      blob.position.copy(S.blob0).lerp(CENTRE, easeIO(seg(el, 0, 7)));
+      if (!S.noteOn && el > 9){ S.noteOn = true; $('noteText').textContent = 'Double tap to begin again'; $('note').classList.add('on'); }
+    } else {
+      basePos.copy(S.gatherPos); look.copy(CENTRE);
+      if (el > (REDUCE ? 2.5 : 4.8)){ S.cycle++; startTravel(0); }
+    }
+  } else if (S.mode === 'finale'){
+    // pull back: every memory now glows in the box
+    const k = clamp(el / 4.5, 0, 1);
+    basePos.copy(S.camCurve.getPoint(ease(k)));
+    look.copy(S.look0).lerp(OVER.look, ease(k));
+    // a slow drift around the box of memories
+    offs.subVectors(basePos, OVER.look).applyAxisAngle(Y, Math.sin(el * .07) * .2 * ease(seg(el, 2, 5)));
+    basePos.copy(OVER.look).add(offs);
+    fov += (overFov() - fov) * Math.min(1, dt * 1.5);
+    tmp.set(Math.sin(t * .35) * 1.6, .4 + Math.sin(t * .5) * .5, Math.cos(t * .35) * 1.8 + 1.5).add(CENTRE);
+    blob.position.copy(S.blob0).lerp(tmp, ease(seg(el, 0, 5)));
+    if (S.queue !== null && el > 1) startTravel(S.queue);
+    else if (el > FINALE){ S.cycle++; startTravel(0); }
+  }
+
+  if (SWIRL.t){ SWIRL_U.value = SWIRL.from + (SWIRL.to - SWIRL.from) * easeIO(seg(t - SWIRL.t, 0, SWIRL.d)); }
+  if (SWIRL_U.value > .001) SWIRLT_U.value += dt * (REDUCE ? .25 : .55);          // slow motion
+  // apply look-around and zoom around the look target
+  if (!S.manualCam){
+  offs.subVectors(basePos, look).multiplyScalar(S.mode === 'travel' ? 1 : ctl.zoom);
+  qy.setFromAxisAngle(Y, ctl.yaw); tmp.crossVectors(Y, offs).normalize(); if (tmp.lengthSq() < .1) tmp.copy(X);
+  qx.setFromAxisAngle(tmp, ctl.pitch);
+  offs.applyQuaternion(qx).applyQuaternion(qy);
+  camera.position.copy(look).add(offs);
+  camera.lookAt(look);
+  // a camera operator's breath, and a lean into the turns while flying
+  let roll = REDUCE ? 0 : Math.sin(t * .31) * .006 + Math.sin(t * .17 + 1.3) * .004;
+  if (S.mode === 'travel') roll += Math.sin(clamp((t - S.t0) / S.dur, 0, 1) * Math.PI) * (S.bank || 0);
+  if (S.mode === 'swirl') roll += Math.sin(el * .05) * .05;
+  camera.rotateZ(roll);
+  if (!REDUCE){ camera.rotateX(Math.sin(t * .53) * .0018); camera.rotateY(Math.sin(t * .41 + .7) * .0022); }
+  if (Math.abs(camera.fov - fov) > .001){ camera.fov = fov; camera.updateProjectionMatrix(); }
+  }
+
+  // the light itself
+  const born = S.mode === 'intro' ? easeOut(seg(el, .3, 2.5)) : 1;
+  // three bodies (retired): only simulated if shown again
+  if (sys.visible){
+  const simDt = Math.min(dt, .05) * (REDUCE ? .5 : 1.15), SUB = 10;
+  for (let k = 0; k < SUB; k++){
+    tbStep(simDt / SUB); tbClock += simDt / SUB;
+    if (tbClock - tbSample > .018){ tbSample = tbClock; for (let i = 0; i < 3; i++){ tbHist[i].unshift(TB.p[i].clone().multiplyScalar(BODY_K)); if (tbHist[i].length > TR) tbHist[i].pop(); } }
+  }
+  sys.rotation.set(.9 + Math.sin(t * .07) * .25, t * .06, .2 + Math.sin(t * .05) * .15);
+  bodies.forEach((b, i) => b.position.copy(TB.p[i]).multiplyScalar(BODY_K));
+  bodyU.uI.value = born * (1 + Math.sin(t * 5.3) * .03);
+  for (let i = 0; i < 3; i++) for (let j = 0; j < TR; j++){
+    const hp = tbHist[i][Math.min(j, tbHist[i].length - 1)] || bodies[i].position, o = (i * TR + j);
+    trailPos[o * 3] = hp.x; trailPos[o * 3 + 1] = hp.y; trailPos[o * 3 + 2] = hp.z;
+    trailA[o] = born * Math.pow(1 - j / TR, 1.5) * (j < tbHist[i].length ? 1 : 0);
+  }
+  swirlGeo.attributes.position.needsUpdate = true; swirlGeo.attributes.a.needsUpdate = true;
+  swirlCore.material.uniforms.uPx.value = px; swirlHaze.material.uniforms.uPx.value = px;
+  }
+  fluidU.uI.value = born * (1 + Math.sin(t * 4.1) * .025) * (AR.pose ? (AR.live ? 0 : grade.uniforms.uGradeMix.value) : 1);
+  blobGrow += ((S.mode === 'swirl' ? 1.5 : 1) - blobGrow) * Math.min(1, dt * .8);   // the galaxy's core
+  fluid.scale.setScalar(.42 * blobGrow * clamp(camera.position.distanceTo(blob.position) / 5.5, .75, 2.4) * clamp(camera.fov / 40, .8, 1.5));   // same size on screen near or far
+  // screen-space motion, so the drop stretches the way it travels
+  tmp2.copy(blob.position).project(camera); tmp.copy(blobPrev).project(camera);
+  fluidU.uVel.value.x += ((tmp2.x - tmp.x) / Math.max(dt, 1e-3) * .05 - fluidU.uVel.value.x) * Math.min(1, dt * 5);
+  fluidU.uVel.value.y += ((tmp2.y - tmp.y) / Math.max(dt, 1e-3) * .05 / camera.aspect - fluidU.uVel.value.y) * Math.min(1, dt * 5);
+  blobVel.subVectors(blob.position, blobPrev).divideScalar(Math.max(dt, 1e-3)); blobPrev.copy(blob.position);
+  // embers
+  embAcc += dt * (5 + Math.min(30, blobVel.length() * 8)) * born;
+  while (embAcc >= 1){ embAcc -= 1; const e = EP[embNext]; embNext = (embNext + 1) % EMB;
+    e.p.copy(blob.position).add(new V3(Math.random() - .5, Math.random() - .5, Math.random() - .5).multiplyScalar(.14));
+    e.v.set(Math.random() - .5, Math.random() - .3, Math.random() - .5).multiplyScalar(.35).addScaledVector(blobVel, -.12);
+    e.life = 0; e.max = 1.4 + Math.random() * 2.4; }
+  const ep = embGeo.attributes.position.array, ea = embGeo.attributes.a.array;
+  EP.forEach((e, i) => {
+    e.life += dt; e.v.multiplyScalar(1 - dt * .9); e.v.y += dt * .05;
+    e.v.x += Math.sin(t * 1.3 + i) * dt * .05; e.v.z += Math.cos(t * 1.1 + i * .7) * dt * .05;
+    e.p.addScaledVector(e.v, dt);
+    ep[i * 3] = e.p.x; ep[i * 3 + 1] = e.p.y; ep[i * 3 + 2] = e.p.z;
+    const k = e.life / e.max;
+    ea[i] = k >= 1 ? 0 : born * (1 - k) * Math.min(1, e.life * 6) * (.55 + .45 * Math.sin(t * 9 + i * 3.7)) * (.5 + e.s);
+  });
+  embGeo.attributes.position.needsUpdate = true; embGeo.attributes.a.needsUpdate = true;
+  embers.material.uniforms.uPx.value = px;
+  // the lens sees the light
+  tmp.copy(blob.position).project(camera);
+  const onScr = tmp.z < 1 && Math.abs(tmp.x) < 1.25 && Math.abs(tmp.y) < 1.25;
+  grade.uniforms.uBlob.value.set(tmp.x * .5 + .5, tmp.y * .5 + .5);
+  const bdist = camera.position.distanceTo(blob.position);
+  grade.uniforms.uBlobV.value += ((onScr ? born * clamp(2.2 - Math.max(Math.abs(tmp.x), Math.abs(tmp.y)) * 1.4, 0, 1) : 0) - grade.uniforms.uBlobV.value) * Math.min(1, dt * 6);
+  grade.uniforms.uBlobS.value = clamp(4 / bdist, .1, 2);
+  // depth of field: focus follows the story
+  let fTarget, aTarget;
+  const curClear = S.mode === 'hold' && mems[S.idx] ? mems[S.idx].U.uClear.value : 0;
+  if (S.mode === 'hold'){ fTarget = camera.position.distanceTo(mems[S.idx].C); aTarget = .032 * (1 - curClear); }
+  else if (S.mode === 'finale'){ fTarget = camera.position.distanceTo(OVER.look); aTarget = .005; }
+  else if (S.mode === 'swirl' || S.mode === 'gather'){ fTarget = camera.position.distanceTo(CENTRE); aTarget = .012; }
+  else { fTarget = bdist; aTarget = .05; }
+  FOCUS_U.value += (fTarget - FOCUS_U.value) * Math.min(1, dt * 2.5);
+  APER_U.value += (aTarget - APER_U.value) * Math.min(1, dt * 1.5);
+  grade.uniforms.uGlass.value += ((1 - .7 * curClear) - grade.uniforms.uGlass.value) * Math.min(1, dt * 2);
+  history.unshift(blob.position.clone()); if (history.length > TRAIL) history.pop();
+  const tp = trailGeo.attributes.position.array, ta = trailGeo.attributes.a.array;
+  const flying = S.mode === 'travel' && S.blobCurve;
+  const kb = flying ? easeIO(clamp((t - S.t0) / S.dur, 0, 1)) : 0;
+  for (let i = 0; i < TRAIL; i++){
+    const h = flying ? S.blobCurve.getPoint(Math.max(0, kb - i * .0011)) : history[Math.min(i >> 1, history.length - 1)];
+    const sw = i * .0009;
+    tp[i * 3] = h.x + Math.sin(i * .7 + t * 2.0) * sw; tp[i * 3 + 1] = h.y + Math.cos(i * .5 + t * 1.7) * sw - i * .0008; tp[i * 3 + 2] = h.z;
+    ta[i] = born * Math.pow(1 - i / TRAIL, 1.6) * (flying ? .55 : .2);
+  }
+  trailGeo.attributes.position.needsUpdate = true; trailGeo.attributes.a.needsUpdate = true;
+
+  // memories
+  for (const m of mems){ if (!m) continue;
+    const U = m.U;
+    U.uPx.value = px;
+    U.uDust.value = 1.5 * easeOut(seg(t - m.born, 0, 3));
+    if (m.levelT){ U.uLevel.value = m.levelFrom + (m.levelTo - m.levelFrom) * ease(seg(t - m.levelT, 0, m.levelTo > m.levelFrom ? 2.6 : 3)); }
+    if (m.waveT > 0){
+      const w = (t - m.waveT) / WAVE;
+      U.uWaveR.value = w >= 1.6 ? 999 : (m.R + 1.2) * easeOut(clamp(w, 0, 1)) + Math.max(0, w - 1) * 6;
+      U.uWaveA.value = w >= 1.6 ? 0 : 1 - ease(seg(w, .7, .5));
+    }
+    if (m.ripT > 0){
+      const w = (t - m.ripT) / 2.6;
+      U.uRipR.value = (m.R + .5) * easeOut(clamp(w, 0, 1)); U.uRipA.value = w > 1 ? 0 : (1 - w) * .9;
+    }
+    if (m.flatT) U.uFlat.value = m.flatFrom + (m.flatTo - m.flatFrom) * easeIO(seg(t - m.flatT, 0, m.flatD));
+    if (m.clearT) U.uClear.value = m.clearFrom + (m.clearTo - m.clearFrom) * easeIO(seg(t - m.clearT, 0, m.clearD));
+    m.clear.visible = U.uClear.value > .002; m.pts.material.visible = U.uClear.value < .998;
+    m.pts.worldToLocal(U.uBlob.value.copy(blob.position));
+    const bd = blob.position.distanceTo(m.C);
+    U.uBlobA.value = clamp(1 - (bd - 1.2 * SCALE) / (3.5 * SCALE), 0, 1) * (m.revealed ? 1 : .6);
+  }
+
+  composer.render();
+}
+function setBars(){
+  const w = innerWidth, h = innerHeight;
+  const bar = w / h > 1.3 ? Math.max(0, (h - w / 2.39) / 2) : h * .065;     // 2.39:1 on wide screens, slim bars on phones
+  document.documentElement.style.setProperty('--bar', bar + 'px');
+}
+addEventListener('resize', setBars); setBars();
+function openCurtain(){ requestAnimationFrame(() => { $('fade').classList.add('out'); setTimeout(() => document.body.classList.add('cine'), 600); }); }
+if (location.hash === '#ar' || EMBED){ $('fade').style.background = '#fff'; $('fade').style.transitionDuration = '2.4s'; }
+if (EMBED){
+  addEventListener('message', (e) => {
+    if (e.data && e.data.type === 'pose' && AR.live){ AR.pose = e.data.pose; return; }
+    if (e.data && e.data.type === 'poseEnd'){ AR.live = false; return; }
+    if (!e.data || e.data.type !== 'go' || GO) return;
+    GO = true; S.t0 = now(); for (const m of mems) if (m) m.born = now();
+    const i = e.data.at ? mems.findIndex((m) => m && m.meta.name === e.data.at) : -1;
+    if (i >= 0 && e.data.pose){ diveFromAR(i, e.data.pose); $('fade').style.transition = 'none'; $('fade').classList.add('out'); }
+    else if (i >= 0){ diveInto(i); $('fade').style.transition = 'none'; $('fade').classList.add('out'); setTimeout(() => document.body.classList.add('cine'), 300); }   // the AR dissolves straight into this memory
+    else openCurtain();
+  });
+} else openCurtain();
+requestAnimationFrame(frame);
+addEventListener('visibilitychange', () => { if (actx){ document.hidden ? actx.suspend() : actx.resume(); } });
+window.__state = () => ({ cam: camera.position.toArray().map((v) => +v.toFixed(2)), fov: +camera.fov.toFixed(1), blob: blob.position.toArray().map((v) => +v.toFixed(2)), mode: S.mode, idx: S.idx, loaded: mems.filter(Boolean).length, revealed: mems.filter((m) => m && m.revealed).length });
+window.__goTo = goTo;
+window.__dbg = { doubleTap, startSwirl,  mems, startFinale: () => { for (const m of mems) if (m){ m.revealed = true; m.waveT = .001; m.frac = 1; m.pts.geometry.setDrawRange(0, m.n); } startFinale(); } };
+</script>
+</body>
+</html>
