@@ -656,28 +656,34 @@ function prefetchBox(){
 let memData = null;
 const getMemory = () => memData || (memData = loadMemory());
 
+let arStarting = false;
+const IN_APP = /FBAN|FBAV|Instagram|Line\/|Snapchat|MicroMessenger|WhatsApp|; wv\)/i.test(navigator.userAgent);
 async function startAR(){
-  setTimeout(prefetchBox, 2500);
+  if (arStarting) return; arStarting = true;
   $('intro').classList.add('hidden'); $('ar').classList.remove('hidden');
   $('err').classList.add('hidden'); $('loading').classList.remove('hidden');
+  $('arStage').innerHTML = '';
+  const dataP = getMemory();                                       // the memory loads alongside; the camera does not wait for it
   try {
-    const [{ MindARThree }, data] = await Promise.all([import('mindar-image-three'), getMemory()]);
+    const { MindARThree } = await import('mindar-image-three');
     const mindar = new MindARThree({ container: $('arStage'), imageTargetSrc: 'targets.mind', maxTrack: 1, uiLoading: 'no', uiError: 'no', uiScanning: '#scanning', filterMinCF: .0001, filterBeta: .001 });
     const { renderer, scene, camera } = mindar;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
     camera.far = 200; camera.updateProjectionMatrix();
     const anchor = mindar.addAnchor(0);
-    const fx = buildMemory(anchor.group, data);
-    let tracking = false, entering = false, readyAt = null;
-    anchor.onTargetFound = () => { tracking = true; fx.found(); $('skipBox').classList.remove('on'); };
-    anchor.onTargetLost = () => { tracking = false; fx.lost(); };
-    await mindar.start();
+    let fx = null, data = null, tracking = false, entering = false, readyAt = null;
+    anchor.onTargetFound = () => { tracking = true; fx && fx.found(); $('skipBox').classList.remove('on'); };
+    anchor.onTargetLost = () => { tracking = false; fx && fx.lost(); };
+    await mindar.start();                                           // camera first
     $('loading').classList.add('hidden');
-    setTimeout(() => { if (!entering && fx.st.foundAt === null) $('skipBox').classList.add('on'); }, 20000);
+    data = await dataP;
+    fx = buildMemory(anchor.group, data); if (tracking) fx.found();
+    setTimeout(prefetchBox, 8000);                                  // only once the camera is running
+    setTimeout(() => { if (!entering && (!fx || fx.st.foundAt === null)) $('skipBox').classList.add('on'); }, 20000);
     const enter = () => {
-      if (entering || !tracking) return; entering = true;
-      $('enterBtn').classList.add('hidden'); startWind();
+      if (entering || !tracking || !fx) return; entering = true;
+      $('enterBtn').classList.add('hidden'); $('skipBox').classList.remove('on'); startWind();
       renderer.domElement.style.opacity = '0';
       anchor.group.updateMatrixWorld(true); camera.updateMatrixWorld(true);
       const inv = anchor.group.matrixWorld.clone().invert();
@@ -687,8 +693,9 @@ async function startAR(){
     };
     $('enterBtn').addEventListener('click', enter);
     renderer.setAnimationLoop(() => {
-      fx.update(renderer, camera); renderer.render(scene, camera);
-      if (tracking && !entering && fx.st.foundAt !== null){
+      if (fx) fx.update(renderer, camera);
+      renderer.render(scene, camera);
+      if (fx && tracking && !entering && fx.st.foundAt !== null){
         const t = performance.now() / 1000 - fx.st.foundAt;
         if (t > 5){
           $('enterBtn').classList.remove('hidden');
@@ -700,9 +707,11 @@ async function startAR(){
       } else if (!tracking && !entering){ readyAt = null; $('enterBtn').classList.add('hidden'); }
     });
   } catch (e) {
-    console.error(e);
+    console.error(e); arStarting = false;
     $('loading').classList.add('hidden');
-    $('errMsg').textContent = !isHttps ? 'The camera only starts on an https:// page.' : 'Allow camera access for this site in your browser settings, then try again.';
+    $('errMsg').textContent = !isHttps ? 'The camera only starts on an https:// page.'
+      : IN_APP ? 'This app’s built-in browser can’t use the camera. Open the link in Chrome or Safari (menu → Open in browser).'
+      : 'Allow camera access for this site, then tap Try again.';
     $('err').classList.remove('hidden');
   }
 }
@@ -716,7 +725,7 @@ async function startPreview(){
 }
 
 $('startBtn').addEventListener('click', startAR);
-$('retryBtn').addEventListener('click', () => location.reload());
+$('retryBtn').addEventListener('click', () => startAR());          // a real tap: browsers that need one for the camera get it
 $('closeBtn').addEventListener('click', () => { location.href = location.pathname; });
 if (PREVIEW) startPreview();
 else if (document.documentElement.classList.contains('auto')) startAR();
