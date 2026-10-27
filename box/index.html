@@ -322,7 +322,7 @@ embGeo.setAttribute('a', new THREE.BufferAttribute(new Float32Array(EMB), 1));
 const swirlCore = new THREE.Points(swirlGeo, pointMat(.011, new THREE.Vector3(.3, .72, 1.05)));
 const swirlHaze = new THREE.Points(swirlGeo, pointMat(.1, new THREE.Vector3(.03, .15, .32)));
 swirlCore.frustumCulled = swirlHaze.frustumCulled = false; sys.add(swirlHaze, swirlCore);
-const embers = new THREE.Points(embGeo, pointMat(.016, new THREE.Vector3(.8, 1.35, 1.25)));
+const embers = new THREE.Points(embGeo, pointMat(.012, new THREE.Vector3(.75, .85, .8)));
 embers.frustumCulled = false; scene.add(embers);
 const EP = Array.from({ length: EMB }, () => ({ p: new V3(0, 0, 999), v: new V3(), life: 9, max: 1, s: Math.random() }));
 let embAcc = 0, embNext = 0;
@@ -392,16 +392,16 @@ const pointVS = `
     float rip = exp(-pow((d - uRipR) / .2, 2.0)) * uRipA;
     float bd = distance(q, uBlob);
     float bl = uBlobA / (1.0 + bd * bd * 9.0);
-    col += c * bl * .9 + uFluo * (rim * (.45 + .5 * h) + rip * .4 + bl * .05 * settle) + vec3(.55, 1.0, .85) * exp(-bd * bd * 110.0) * uBlobA * .45 * settle;
+    col += c * bl * .9 + uFluo * (rim * (.45 + .5 * h) + rip * .4 + bl * .015 * settle) + vec3(.9, 1.0, .92) * exp(-bd * bd * 110.0) * uBlobA * .22 * settle;
     // a slow cinematic light sweeping across the memory
     vec3 sdir = normalize(vec3(.85, .25, .45));
     float sweep = exp(-pow((dot(p, sdir) - (mod(uTime * .3 + uPlane * 2.0, 7.0) - 3.5)) / .45, 2.0)) * settle;
     col += c * sweep * .85 + vec3(1.0, .82, .6) * sweep * .045;
     // fireflies: a few points glow and breathe
-    float ff = step(fract(h * 97.0 + h2 * 13.0), .012) * settle;
+    float ff = step(fract(h * 97.0 + h2 * 13.0), .0035) * settle;
     float ffp = .5 + .5 * sin(uTime * (.6 + h3 * 1.4) + h * 40.0);
-    col += (c * 1.4 + uFluo * .3) * ff * ffp * 2.4;
-    col *= .95 + .05 * sin(uTime * 1.3 + h * 50.0);
+    col += (c * 1.1 + vec3(.22, .17, .1)) * ff * ffp * 1.3;
+    col *= .975 + .025 * sin(uTime * 1.3 + h * 50.0);
     col *= aW * lf * (1.0 + glint * (1.6 + bl * 2.5));                // soft edges, shed sparkles, glints that catch the light
     float swz = 0.0;
     vec4 wp = modelMatrix * vec4(q, 1.0);
@@ -426,7 +426,7 @@ const pointVS = `
     }
     vec4 mv = viewMatrix * wp;
     float dist = -mv.z;
-    float sz = exp(uSmin + aS * (uSmax - uSmin)) * mix(.55, 1.0, settle) * (1.0 + rim * .8 + ff * ffp * 1.6) * mix(1.0, kf * uCardK, uFlat);
+    float sz = exp(uSmin + aS * (uSmax - uSmin)) * mix(.55, 1.0, settle) * (1.0 + rim * .8 + ff * ffp * .9) * mix(1.0, kf * uCardK, uFlat);
     float ps = sz * length(modelViewMatrix[0].xyz) * uPx / dist * uSizeK * (1.0 + swz * .35);
     if (swGone > .985){ vC = vec3(0.0); vBok = 0.0; gl_PointSize = 0.0; gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }    // glitter pass: smaller than the gaps; clear pass: fills them
     // depth of field: out-of-focus particles open into soft bokeh discs
@@ -480,7 +480,7 @@ function makeMemory(meta, buf, i){
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
   pts.frustumCulled = false; pts.renderOrder = 1;
   // the same memory, in sharp focus: solid splats that hide what is behind them
-  const clear = new THREE.Points(g, new THREE.ShaderMaterial({ uniforms: { ...U, uMode: { value: 1 }, uSizeK: { value: 1.0 }, uShed: { value: 0 }, uAper: { value: 0 }, uGain: { value: 1.0 } },
+  const clear = new THREE.Points(g, new THREE.ShaderMaterial({ uniforms: { ...U, uMode: { value: 1 }, uSizeK: { value: 1.16 }, uShed: { value: 0 }, uAper: { value: 0 }, uGain: { value: 1.0 } },
     vertexShader: pointVS, fragmentShader: pointFS, vertexColors: true }));
   clear.frustumCulled = false; clear.visible = false; pts.add(clear);
   pts.position.copy(focus).multiplyScalar(-1);          // the people sit at the group's centre
@@ -854,7 +854,7 @@ function frame(){
   fluidU.uVel.value.y += ((tmp2.y - tmp.y) / Math.max(dt, 1e-3) * .05 / camera.aspect - fluidU.uVel.value.y) * Math.min(1, dt * 5);
   blobVel.subVectors(blob.position, blobPrev).divideScalar(Math.max(dt, 1e-3)); blobPrev.copy(blob.position);
   // embers
-  embAcc += dt * (14 + Math.min(50, blobVel.length() * 12)) * born;
+  embAcc += dt * (5 + Math.min(30, blobVel.length() * 8)) * born;
   while (embAcc >= 1){ embAcc -= 1; const e = EP[embNext]; embNext = (embNext + 1) % EMB;
     e.p.copy(blob.position).add(new V3(Math.random() - .5, Math.random() - .5, Math.random() - .5).multiplyScalar(.14));
     e.v.set(Math.random() - .5, Math.random() - .3, Math.random() - .5).multiplyScalar(.35).addScaledVector(blobVel, -.12);
@@ -930,6 +930,7 @@ function setBars(){
   document.documentElement.style.setProperty('--bar', bar + 'px');
 }
 addEventListener('resize', setBars); setBars();
+if (location.hash === '#ar'){ $('fade').style.background = '#fff'; $('fade').style.transitionDuration = '2.4s'; }
 requestAnimationFrame(() => { $('fade').classList.add('out'); setTimeout(() => document.body.classList.add('cine'), 600); });
 requestAnimationFrame(frame);
 addEventListener('visibilitychange', () => { if (actx){ document.hidden ? actx.suspend() : actx.resume(); } });
