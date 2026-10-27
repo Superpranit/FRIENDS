@@ -634,6 +634,88 @@ function startFilm(data, from){
 }
 
 /* =====================================================================
+   THE SAME POINT CLOUD AS THE MEMORY BOX, STANDING INSIDE THE PRINT
+   ===================================================================== */
+async function loadCloud(name){
+  const box = await fetch('../box/box.json').then((r) => r.json());
+  const meta = box.memories.find((m) => m.name === name);
+  const buf = await fetch('../box/' + meta.file).then((r) => { if (!r.ok) throw new Error(meta.file); return r.arrayBuffer(); });
+  return { meta, buf };
+}
+function buildCloudAR(parent, cloud){
+  const { meta, buf } = cloud, n = meta.n;
+  const root = new THREE.Group(); parent.add(root);
+  // the wall around the print: invisible, but it hides whatever is behind it, so the print is a window
+  const occMat = new THREE.MeshBasicMaterial({ colorWrite: false });
+  [[0, PH / 2 + 3, 12, 6], [0, -PH / 2 - 3, 12, 6], [-.5 - 3, 0, 6, PH + .2], [.5 + 3, 0, 6, PH + .2]].forEach(([x, y, w, h]) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), occMat); m.position.set(x, y, 0); m.renderOrder = -1; root.add(m);
+  });
+  // the photo's own camera stands Dv in front of the print, so through the print you see exactly the photograph
+  const Dv = (PH / 2) / (meta.cy / meta.f), S = 3.37;
+  const ib16 = new THREE.InterleavedBuffer(new Uint16Array(buf, 0, n * 6), 6), ib8 = new THREE.InterleavedBuffer(new Uint8Array(buf, 0, n * 12), 12);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.InterleavedBufferAttribute(ib16, 3, 0, true));
+  g.setAttribute('color', new THREE.InterleavedBufferAttribute(ib8, 3, 6, true));
+  g.setAttribute('aS', new THREE.InterleavedBufferAttribute(ib8, 1, 9, true));
+  g.setAttribute('aW', new THREE.InterleavedBufferAttribute(ib8, 1, 10, true));
+  const focus = new THREE.Vector3(...meta.focus);
+  const U = { uLo: { value: new THREE.Vector3(...meta.lo) }, uHi: { value: new THREE.Vector3(...meta.hi) }, uSmin: { value: meta.smin }, uSmax: { value: meta.smax },
+    uPx: { value: 1 }, uTime: { value: 0 }, uWaveC: { value: focus }, uWaveR: { value: 0 }, uWaveA: { value: 0 }, uLevel: { value: 0 }, uDv: { value: 0 }, uDepth: { value: 0 } };
+  const pts = new THREE.Points(g, new THREE.ShaderMaterial({
+    uniforms: U, vertexColors: true, transparent: true, depthWrite: false,
+    vertexShader: `uniform vec3 uLo, uHi, uWaveC; uniform float uSmin, uSmax, uPx, uTime, uWaveR, uWaveA, uLevel, uDv, uDepth; attribute float aS, aW; varying vec3 vC; varying float vA;
+      float hsh(vec3 p){ p = fract(p * .3183099 + .1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+      void main(){
+        vec3 p = uLo + position * (uHi - uLo);
+        float h = hsh(position * 613.0), h2 = hsh(position * 271.0 + 3.1), h3 = hsh(position * 997.0 + 7.7);
+        float d = distance(p, uWaveC);
+        float passed = 1.0 - smoothstep(uWaveR - .9, uWaveR, d); float settle = passed * passed * (3.0 - 2.0 * passed);
+        vec3 drift = vec3(sin(uTime * .21 + h * 40.0), cos(uTime * .17 + h2 * 31.0), sin(uTime * .13 + h3 * 17.0));
+        // laid on the print along the photo's own camera rays (so it matches the photograph from any angle), with a little depth
+        float kz = uDv / max(-p.z, .3);
+        vec3 pp = vec3(p.x * kz, p.y * kz, -(-p.z - 2.0) * uDepth);
+        vec3 q = pp + (normalize(vec3(h, h2, h3) - .5 + 1e-4) * (.18 + 1.1 * h2 * h2) + drift * .12) * (1.0 - settle) * .12;
+        float lum = dot(color, vec3(.2126, .7152, .0722));
+        vec3 dim = (vec3(lum) * .7 + color * .3) * vec3(.55, .8, 1.0) * .35;
+        float rim = exp(-pow((d - uWaveR) / .22, 2.0)) * uWaveA;
+        vC = mix(dim, color * uLevel, settle) + vec3(.55, 1.0, .9) * rim * (.4 + .5 * h);
+        vA = pow(aW, 1.6) * mix(.6, 1.0, settle);                 // the misty edges melt into the real print
+        vec4 mv = modelViewMatrix * vec4(q, 1.0);
+        float sz = exp(uSmin + aS * (uSmax - uSmin)) * kz * mix(.6, 1.16, settle);
+        gl_PointSize = clamp(sz * length(modelViewMatrix[0].xyz) * uPx / -mv.z, 1.0, 40.0);
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `varying vec3 vC; varying float vA; void main(){ float r = length(gl_PointCoord - .5) * 2.0; if (r > 1.0) discard; float a = vA * smoothstep(1.0, .6, r); if (a < .02) discard; gl_FragColor = vec4(vC, a); }`
+  }));
+  U.uDv.value = Dv; pts.frustumCulled = false; root.add(pts);
+  let R = 0; const lo = U.uLo.value, hi = U.uHi.value;
+  for (const x of [lo.x, hi.x]) for (const y of [lo.y, hi.y]) for (const z of [lo.z, hi.z]) R = Math.max(R, focus.distanceTo(new THREE.Vector3(x, y, z)));
+  const st = { foundAt: null, lostAt: null };
+  return {
+    st,
+    found(){ const now = performance.now() / 1000; if (st.foundAt === null || st.lostAt === null || now - st.lostAt > 1.5) st.foundAt = now; st.lostAt = null; chimeAR(); },
+    lost(){ st.lostAt = performance.now() / 1000; },
+    update(renderer, camera){
+      const now = performance.now() / 1000;
+      U.uTime.value = now; U.uPx.value = camera.projectionMatrix.elements[5] * renderer.domElement.height * .5;
+      if (st.foundAt === null) return;
+      const t = now - st.foundAt, w = clamp01((t - .6) / 3.4);          // dust in the window, then the light assembles the memory
+      U.uWaveR.value = (R + 1.2) * (1 - Math.pow(1 - w, 3)); U.uWaveA.value = 1 - smooth(clamp01((w - .7) / .3));
+      U.uLevel.value = smooth(clamp01((t - .6) / 2.6));
+      U.uDepth.value = .05 * smooth(clamp01((t - 3.5) / 2.5));        // once assembled, it gently gains depth
+    }
+  };
+}
+let chimed = false;
+function chimeAR(){
+  if (chimed) return; chimed = true;
+  try { const a = audio(); if (!a) return; const t = a.currentTime, out = a.createGain(); out.gain.value = .06; out.connect(a.destination);
+    [[1, 1, 2.6], [1.5, .45, 2.0], [2, .3, 1.6]].forEach(([m, g0, dur], k) => { const o = a.createOscillator(), g = a.createGain(); o.frequency.value = 587.33 * m;
+      g.gain.setValueAtTime(0, t + k * .05); g.gain.linearRampToValueAtTime(g0, t + k * .05 + .01); g.gain.exponentialRampToValueAtTime(.0001, t + k * .05 + dur); o.connect(g); g.connect(out); o.start(t + k * .05); o.stop(t + k * .05 + dur + .1); });
+  } catch (e) {}
+}
+
+/* =====================================================================
    ON INTO THE MEMORY BOX (the void with all the memories)
    ===================================================================== */
 let boxing = false, boxFrame = null, boxReady = false, filmStopped = false;
@@ -648,20 +730,22 @@ function prefetchBox(){
   document.body.appendChild(boxFrame);
 }
 addEventListener('message', (e) => { if (e.data && e.data.type === 'boxReady') boxReady = true; });
-function goToBox(){
+function goToBox(opts = {}){
   if (boxing) return; boxing = true;
-  $('boxNote').classList.remove('on');
-  $('toBox').classList.add('on');                                   // a white flash...
+  $('boxNote').classList.remove('on'); $('skipBox').classList.remove('on');
+  const dissolve = !!opts.at;                                         // from the AR: a slow dissolve into the same memory
+  if (!dissolve) $('toBox').classList.add('on');                      // from the film: a white flash
   prefetchBox();
   const t0 = performance.now();
   const reveal = () => {
-    if (!boxReady && performance.now() - t0 < 20000){ setTimeout(reveal, 200); return; }
-    filmStopped = true;                                              // free the film's GPU for the box
+    if (!boxReady && performance.now() - t0 < 20000){ setTimeout(reveal, 150); return; }
+    filmStopped = true;
+    try { boxFrame.contentWindow.postMessage({ type: 'go', at: opts.at || null }, '*'); boxFrame.contentWindow.focus(); } catch (e) {}
+    boxFrame.style.transition = 'opacity ' + (dissolve ? 1.8 : 1.2) + 's ease';
     boxFrame.style.opacity = '1'; boxFrame.style.pointerEvents = 'auto';
-    try { boxFrame.contentWindow.postMessage({ type: 'go' }, '*'); boxFrame.contentWindow.focus(); } catch (e) {}
-    setTimeout(() => { $('toBox').style.transition = 'opacity 2s ease'; $('toBox').classList.remove('on'); $('ar').style.visibility = 'hidden'; }, 900);   // ...and the void opens from it
+    setTimeout(() => { $('toBox').style.transition = 'opacity 2s ease'; $('toBox').classList.remove('on'); $('ar').style.visibility = 'hidden'; opts.onShown && opts.onShown(); }, dissolve ? 1900 : 900);
   };
-  setTimeout(reveal, 1500);
+  setTimeout(reveal, dissolve ? 50 : 1500);
 }
 
 /* =====================================================================
@@ -677,7 +761,7 @@ async function startAR(){
   $('intro').classList.add('hidden'); $('ar').classList.remove('hidden');
   $('err').classList.add('hidden'); $('loading').classList.remove('hidden');
   $('arStage').innerHTML = '';
-  const dataP = getMemory();                                       // the memory loads alongside; the camera does not wait for it
+  const dataP = loadCloud('hilltop');                              // the same point cloud as the memory box; the camera does not wait for it
   try {
     const { MindARThree } = await import('mindar-image-three');
     if (liveMindar){ try { liveMindar.stop(); } catch (e) {} liveMindar = null; }
@@ -694,18 +778,17 @@ async function startAR(){
     await mindar.start();                                           // camera first
     $('loading').classList.add('hidden');
     data = await dataP;
-    fx = buildMemory(anchor.group, data); if (tracking) fx.found();
-    setTimeout(prefetchBox, 8000);                                  // only once the camera is running
+    fx = buildCloudAR(anchor.group, data); if (tracking) fx.found();
+    setTimeout(prefetchBox, 1500);                                  // the box loads behind the camera
     setTimeout(() => { if (!entering && (!fx || fx.st.foundAt === null)) $('skipBox').classList.add('on'); }, 20000);
     const enter = () => {
       if (entering || !tracking || !fx) return; entering = true;
-      $('enterBtn').classList.add('hidden'); $('skipBox').classList.remove('on'); startWind();
-      renderer.domElement.style.opacity = '0';
+      $('enterBtn').classList.add('hidden'); $('skipBox').classList.remove('on');
       anchor.group.updateMatrixWorld(true); camera.updateMatrixWorld(true);
       const inv = anchor.group.matrixWorld.clone().invert();
       const pos = camera.getWorldPosition(new THREE.Vector3()).applyMatrix4(inv);
       const dir = camera.getWorldDirection(new THREE.Vector3()).transformDirection(inv);
-      startFilm(data, { pos, look: pos.clone().add(dir.multiplyScalar(pos.length())), fov: camera.fov, onCrossed: () => { renderer.setAnimationLoop(null); try { mindar.stop(); } catch (e) {} } });
+      goToBox({ at: 'hilltop', onShown: () => { renderer.setAnimationLoop(null); try { mindar.stop(); } catch (e) {} } });   // straight into the same memory, inside the box
     };
     $('enterBtn').addEventListener('click', enter);
     renderer.setAnimationLoop(() => {
