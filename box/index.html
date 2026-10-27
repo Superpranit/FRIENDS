@@ -597,6 +597,18 @@ function memFov(m){
 }
 
 function setClear(m, to, d, delay = 0){ m.clearFrom = m.U.uClear.value; m.clearTo = to; m.clearT = now() + delay; m.clearD = d; }
+// arriving from the AR: start in the very memory you scanned, already assembled, and glide into it
+function diveInto(i){
+  const m = mems[i];
+  m.revealed = true; m.waveT = .001; m.frac = 1; m.pts.geometry.setDrawRange(0, m.n);
+  m.U.uLevel.value = 1; m.levelT = 0; m.U.uFlat.value = 0; m.flatT = 0; m.U.uClear.value = 1; m.clearT = 0;
+  const dir = m.C.clone().sub(m.view).normalize();
+  S.mode = 'dive'; S.idx = i; S.t0 = now(); S.queue = null;
+  S.diveFrom = m.view.clone().addScaledVector(dir, -2.4 * SCALE);
+  camera.position.copy(S.diveFrom); look.copy(m.C).addScaledVector(new V3(0, 1, 0), .22 * SCALE);
+  camera.fov = memFov(m) * .85; camera.updateProjectionMatrix();
+  blob.position.copy(m.C).add(new V3(0, .45 * SCALE, .3 * SCALE));
+}
 function setFlat(m, to, d){ m.flatFrom = m.U.uFlat.value; m.flatTo = to; m.flatT = now(); m.flatD = d; }
 function startTravel(i){
   const m = mems[i]; if (!m) return false;
@@ -754,6 +766,12 @@ function frame(){
     blob.position.copy(blobStart).add(new V3(0, Math.sin(t * .8) * .08, 0));
     fov += (overFov() - fov) * Math.min(1, dt * 2);
     if (el > INTRO && mems[0]) startTravel(0);
+  } else if (S.mode === 'dive'){
+    const m = mems[S.idx], k = easeIO(seg(el, 0, REDUCE ? 1.5 : 3.4));
+    basePos.copy(S.diveFrom).lerp(m.view, k);
+    look.copy(m.C).addScaledVector(Y, .22 * SCALE);
+    fov += (memFov(m) - fov) * Math.min(1, dt * 1.5);
+    if (k >= 1) arrive();
   } else if (S.mode === 'travel'){
     const m = mems[S.idx], k = clamp(el / S.dur, 0, 1);
     const kb = easeIO(k), kc = ease(ease(k) * .85 + k * .15);
@@ -781,7 +799,7 @@ function frame(){
     blob.position.copy(m.C).add(offs);
     if (S.queue !== null && el > 1.2) startTravel(S.queue);
     // stay with this memory until the viewer double-taps
-    if (S.idx === 0 && !S.noted && el > 3.6 && !S.noteOn){ S.noteOn = true; $('noteText').textContent = 'Double tap for the next memory'; $('note').classList.add('on'); }
+    if (!S.noted && el > 3.6 && !S.noteOn){ S.noteOn = true; $('noteText').textContent = 'Double tap for the next memory'; $('note').classList.add('on'); }
   } else if (S.mode === 'swirl' || S.mode === 'gather'){
     // pull far back and watch every point drift into one slow galaxy
     const k = clamp(el / 6, 0, 1);
@@ -940,7 +958,9 @@ if (EMBED){
   addEventListener('message', (e) => {
     if (!e.data || e.data.type !== 'go' || GO) return;
     GO = true; S.t0 = now(); for (const m of mems) if (m) m.born = now();
-    openCurtain();
+    const i = e.data.at ? mems.findIndex((m) => m && m.meta.name === e.data.at) : -1;
+    if (i >= 0){ diveInto(i); $('fade').style.transition = 'none'; $('fade').classList.add('out'); setTimeout(() => document.body.classList.add('cine'), 300); }   // the AR dissolves straight into this memory
+    else openCurtain();
   });
 } else openCurtain();
 requestAnimationFrame(frame);
