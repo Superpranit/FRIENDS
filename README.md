@@ -1,6 +1,6 @@
 # Memory Box — FRIENDS
 
-Live: https://superpranit.github.io/FRIENDS/box/ — the poster QR (https://superpranit.github.io/FRIENDS/m) now opens this memory void. The earlier AR hilltop page is still at https://superpranit.github.io/FRIENDS/memory/
+Scan the poster QR (https://superpranit.github.io/FRIENDS/m): the camera opens, point it at the poster, the hilltop comes alive in AR and the camera flies inside, then it continues through a white flash into the memory box void (https://superpranit.github.io/FRIENDS/box/).
 
 Scan the poster with any phone camera. The page opens, the camera starts by itself, and the print turns into a misty 3D window of the hilltop. After a few seconds the camera flies inside: drag to look around, pinch to move closer, tap a friend for a burst of flowers. Add `?preview` to the link to play it on a laptop without a camera.
 
