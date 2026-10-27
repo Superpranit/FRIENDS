@@ -601,6 +601,7 @@ function startFilm(data, from){
   }
 
   renderer.setAnimationLoop(() => {
+    if (filmStopped){ renderer.setAnimationLoop(null); try { actx && actx.suspend(); } catch (e) {} return; }
     const now = performance.now() / 1000, t = now - t0;
     const k = clamp01((t - flyDelay) / FLY), e = easeInOut(k);
     if (!inside){
@@ -635,19 +636,32 @@ function startFilm(data, from){
 /* =====================================================================
    ON INTO THE MEMORY BOX (the void with all the memories)
    ===================================================================== */
-let boxing = false;
+let boxing = false, boxFrame = null, boxReady = false, filmStopped = false;
+// the memory box lives in this same page: it loads quietly behind the AR and fades in, no page change
+function prefetchBox(){
+  if (boxFrame) return;
+  boxFrame = document.createElement('iframe');
+  boxFrame.src = '../box/#embed';
+  boxFrame.title = 'Memory box';
+  boxFrame.setAttribute('allow', 'autoplay; fullscreen');
+  boxFrame.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;border:0;opacity:0;pointer-events:none;z-index:15;background:#000;transition:opacity 1.2s ease';
+  document.body.appendChild(boxFrame);
+}
+addEventListener('message', (e) => { if (e.data && e.data.type === 'boxReady') boxReady = true; });
 function goToBox(){
   if (boxing) return; boxing = true;
   $('boxNote').classList.remove('on');
-  $('toBox').classList.add('on');                                   // a white flash, then the void opens from it
-  setTimeout(() => { location.href = '../box/#ar'; }, 1600);
-}
-// fetch the memory box while the AR plays, so it opens without waiting
-let prefetched = false;
-function prefetchBox(){
-  if (prefetched) return; prefetched = true;
-  fetch('../box/').catch(() => {});
-  fetch('../box/box.json').then((r) => r.json()).then((b) => b.memories.reduce((p, m) => p.then(() => fetch('../box/' + m.file).catch(() => {})), Promise.resolve())).catch(() => {});
+  $('toBox').classList.add('on');                                   // a white flash...
+  prefetchBox();
+  const t0 = performance.now();
+  const reveal = () => {
+    if (!boxReady && performance.now() - t0 < 20000){ setTimeout(reveal, 200); return; }
+    filmStopped = true;                                              // free the film's GPU for the box
+    boxFrame.style.opacity = '1'; boxFrame.style.pointerEvents = 'auto';
+    try { boxFrame.contentWindow.postMessage({ type: 'go' }, '*'); boxFrame.contentWindow.focus(); } catch (e) {}
+    setTimeout(() => { $('toBox').style.transition = 'opacity 2s ease'; $('toBox').classList.remove('on'); $('ar').style.visibility = 'hidden'; }, 900);   // ...and the void opens from it
+  };
+  setTimeout(reveal, 1500);
 }
 
 /* =====================================================================
@@ -656,7 +670,7 @@ function prefetchBox(){
 let memData = null;
 const getMemory = () => memData || (memData = loadMemory());
 
-let arStarting = false;
+let arStarting = false, liveMindar = null;
 const IN_APP = /FBAN|FBAV|Instagram|Line\/|Snapchat|MicroMessenger|WhatsApp|; wv\)/i.test(navigator.userAgent);
 async function startAR(){
   if (arStarting) return; arStarting = true;
@@ -666,7 +680,9 @@ async function startAR(){
   const dataP = getMemory();                                       // the memory loads alongside; the camera does not wait for it
   try {
     const { MindARThree } = await import('mindar-image-three');
+    if (liveMindar){ try { liveMindar.stop(); } catch (e) {} liveMindar = null; }
     const mindar = new MindARThree({ container: $('arStage'), imageTargetSrc: 'targets.mind', maxTrack: 1, uiLoading: 'no', uiError: 'no', uiScanning: '#scanning', filterMinCF: .0001, filterBeta: .001 });
+    liveMindar = mindar;
     const { renderer, scene, camera } = mindar;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
@@ -709,9 +725,13 @@ async function startAR(){
   } catch (e) {
     console.error(e); arStarting = false;
     $('loading').classList.add('hidden');
+    const n = (e && e.name) || '';
     $('errMsg').textContent = !isHttps ? 'The camera only starts on an https:// page.'
-      : IN_APP ? 'This app’s built-in browser can’t use the camera. Open the link in Chrome or Safari (menu → Open in browser).'
-      : 'Allow camera access for this site, then tap Try again.';
+      : IN_APP ? 'This app\u2019s built-in browser can\u2019t use the camera. Open the link in Chrome or Safari (menu \u2192 Open in browser).'
+      : n === 'NotAllowedError' || n === 'SecurityError' ? 'Camera access is turned off for this site. Tap the icon next to the web address, allow Camera, then tap Try again.'
+      : n === 'NotReadableError' || n === 'AbortError' || n === 'TrackStartError' ? 'The camera is busy. Close other tabs or apps using it, then tap Try again.'
+      : n === 'NotFoundError' || n === 'OverconstrainedError' ? 'No camera was found on this device.'
+      : 'The camera could not start (' + (n || (e && e.message) || 'unknown') + '). Tap Try again.';
     $('err').classList.remove('hidden');
   }
 }
@@ -725,7 +745,8 @@ async function startPreview(){
 }
 
 $('startBtn').addEventListener('click', startAR);
-$('retryBtn').addEventListener('click', () => startAR());          // a real tap: browsers that need one for the camera get it
+$('retryBtn').addEventListener('click', () => startAR());
+addEventListener('pagehide', () => { if (liveMindar){ try { liveMindar.stop(); } catch (e) {} } });          // a real tap: browsers that need one for the camera get it
 $('closeBtn').addEventListener('click', () => { location.href = location.pathname; });
 if (PREVIEW) startPreview();
 else if (document.documentElement.classList.contains('auto')) startAR();

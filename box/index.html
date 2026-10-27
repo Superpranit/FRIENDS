@@ -510,7 +510,10 @@ async function loadAll(){
   return box.memories.length;
 }
 let COUNT = LAYOUT.length;
-loadAll().then((n) => { COUNT = n; }).catch((e) => { console.error(e); });
+// inside the AR page, the box waits (drawing nothing) until the AR hands over
+const EMBED = location.hash === '#embed';
+let GO = !EMBED;
+loadAll().then((n) => { COUNT = n; if (EMBED) try { parent.postMessage({ type: 'boxReady' }, '*'); } catch (e) {} }).catch((e) => { console.error(e); if (EMBED) try { parent.postMessage({ type: 'boxReady' }, '*'); } catch (er) {} });
 
 /* ===================== sound (made in the browser) ===================== */
 let actx = null, master = null, soundOn = false;
@@ -727,6 +730,7 @@ const tmp = new V3(), tmp2 = new V3(), offs = new V3(), qy = new THREE.Quaternio
 let last = now();
 function frame(){
   requestAnimationFrame(frame);
+  if (!GO){ last = now(); return; }
   const t = now(), dt = Math.min(.05, t - last); last = t;
   timeU.value = t; grade.uniforms.uTime.value = t;
   const px = camera.projectionMatrix.elements[5] * renderer.domElement.height * .5;
@@ -930,8 +934,15 @@ function setBars(){
   document.documentElement.style.setProperty('--bar', bar + 'px');
 }
 addEventListener('resize', setBars); setBars();
-if (location.hash === '#ar'){ $('fade').style.background = '#fff'; $('fade').style.transitionDuration = '2.4s'; }
-requestAnimationFrame(() => { $('fade').classList.add('out'); setTimeout(() => document.body.classList.add('cine'), 600); });
+function openCurtain(){ requestAnimationFrame(() => { $('fade').classList.add('out'); setTimeout(() => document.body.classList.add('cine'), 600); }); }
+if (location.hash === '#ar' || EMBED){ $('fade').style.background = '#fff'; $('fade').style.transitionDuration = '2.4s'; }
+if (EMBED){
+  addEventListener('message', (e) => {
+    if (!e.data || e.data.type !== 'go' || GO) return;
+    GO = true; S.t0 = now(); for (const m of mems) if (m) m.born = now();
+    openCurtain();
+  });
+} else openCurtain();
 requestAnimationFrame(frame);
 addEventListener('visibilitychange', () => { if (actx){ document.hidden ? actx.suspend() : actx.resume(); } });
 window.__state = () => ({ cam: camera.position.toArray().map((v) => +v.toFixed(2)), fov: +camera.fov.toFixed(1), blob: blob.position.toArray().map((v) => +v.toFixed(2)), mode: S.mode, idx: S.idx, loaded: mems.filter(Boolean).length, revealed: mems.filter((m) => m && m.revealed).length });
