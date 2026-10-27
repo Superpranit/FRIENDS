@@ -450,6 +450,9 @@ const pointFS = `uniform float uMode; varying vec3 vC; varying float vBok;
     gl_FragColor = vec4(vC * mix(soft, disc, vBok), 1.0);
   }`;
 
+// inside the AR page, the box waits (drawing nothing) until the AR hands over
+const EMBED = location.hash === '#embed';
+let GO = !EMBED;
 const mems = [];
 const FOCUS_U = { value: 10 }, APER_U = { value: .03 }, SWIRL_U = { value: 0 }, SWIRLT_U = { value: 0 };
 function makeMemory(meta, buf, i){
@@ -502,17 +505,19 @@ function makeMemory(meta, buf, i){
 
 async function loadAll(){
   const box = await fetch('box.json').then((r) => r.json());
-  for (let i = 0; i < box.memories.length; i++){
+  // inside the AR, the scanned memory loads first so the box can open the moment the photo is seen
+  const order = box.memories.map((m, i) => i), first = box.memories.findIndex((m) => m.name === 'hilltop');
+  if (EMBED && first > 0){ order.splice(order.indexOf(first), 1); order.unshift(first); }
+  let told = false;
+  for (const i of order){
     const meta = box.memories[i];
     const buf = await fetch(meta.file).then((r) => { if (!r.ok) throw new Error(meta.file); return r.arrayBuffer(); });
     makeMemory(meta, buf, i);
+    if (EMBED && !told){ told = true; try { parent.postMessage({ type: 'boxReady' }, '*'); } catch (e) {} }
   }
   return box.memories.length;
 }
 let COUNT = LAYOUT.length;
-// inside the AR page, the box waits (drawing nothing) until the AR hands over
-const EMBED = location.hash === '#embed';
-let GO = !EMBED;
 loadAll().then((n) => { COUNT = n; if (EMBED) try { parent.postMessage({ type: 'boxReady' }, '*'); } catch (e) {} }).catch((e) => { console.error(e); if (EMBED) try { parent.postMessage({ type: 'boxReady' }, '*'); } catch (er) {} });
 
 /* ===================== sound (made in the browser) ===================== */
@@ -679,7 +684,7 @@ function doubleTap(){
   $('note').classList.remove('on'); S.noteOn = false;
   const n = mems.filter(Boolean).length;
   if (S.mode === 'hold'){
-    if (S.idx + 1 < n) startTravel(S.idx + 1);
+    if (S.idx + 1 < COUNT){ if (mems[S.idx + 1]) startTravel(S.idx + 1); }   // (still loading? the next double tap will go)
     else if (n >= COUNT) startSwirl();
   } else if (S.mode === 'intro'){ if (mems[0]) startTravel(0); }
   else if (S.mode === 'swirl' && now() - S.t0 > 2.5){ endSwirl(); }

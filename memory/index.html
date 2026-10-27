@@ -699,10 +699,10 @@ function buildCloudAR(parent, cloud){
       const now = performance.now() / 1000;
       U.uTime.value = now; U.uPx.value = camera.projectionMatrix.elements[5] * renderer.domElement.height * .5;
       if (st.foundAt === null) return;
-      const t = now - st.foundAt, w = clamp01((t - .6) / 3.4);          // dust in the window, then the light assembles the memory
+      const t = now - st.foundAt, w = clamp01((t - .05) / 1.1);         // the photograph turns into points, sweeping out from the friends
       U.uWaveR.value = (R + 1.2) * (1 - Math.pow(1 - w, 3)); U.uWaveA.value = 1 - smooth(clamp01((w - .7) / .3));
-      U.uLevel.value = smooth(clamp01((t - .6) / 2.6));
-      U.uDepth.value = .05 * smooth(clamp01((t - 3.5) / 2.5));        // once assembled, it gently gains depth
+      U.uLevel.value = smooth(clamp01((t - .05) / .8));
+      U.uDepth.value = .14 * smooth(clamp01((t - .5) / 1.8));         // and lifts into depth as the box opens around it
     }
   };
 }
@@ -779,7 +779,7 @@ async function startAR(){
     $('loading').classList.add('hidden');
     data = await dataP;
     fx = buildCloudAR(anchor.group, data); if (tracking) fx.found();
-    setTimeout(prefetchBox, 1500);                                  // the box loads behind the camera
+    prefetchBox();                                                  // the box loads behind the camera
     setTimeout(() => { if (!entering && (!fx || fx.st.foundAt === null)) $('skipBox').classList.add('on'); }, 20000);
     const enter = () => {
       if (entering || !tracking || !fx) return; entering = true;
@@ -794,16 +794,8 @@ async function startAR(){
     renderer.setAnimationLoop(() => {
       if (fx) fx.update(renderer, camera);
       renderer.render(scene, camera);
-      if (fx && tracking && !entering && fx.st.foundAt !== null){
-        const t = performance.now() / 1000 - fx.st.foundAt;
-        if (t > 5){
-          $('enterBtn').classList.remove('hidden');
-          if (readyAt === null) readyAt = performance.now() / 1000;
-          const p = clamp01((performance.now() / 1000 - readyAt) / 4.5);
-          $('enterProg').style.strokeDashoffset = String(100 - p * 100);
-          if (p >= 1) enter();
-        }
-      } else if (!tracking && !entering){ readyAt = null; $('enterBtn').classList.add('hidden'); }
+      if (fx && tracking && !entering && fx.st.foundAt !== null && performance.now() / 1000 - fx.st.foundAt > .9) enter();   // seen -> straight into the memory box
+
     });
   } catch (e) {
     console.error(e); arStarting = false;
